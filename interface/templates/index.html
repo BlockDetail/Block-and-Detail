@@ -1,0 +1,397 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- <title>Sketch-A-Sketch</title> -->
+    <link rel="stylesheet" href="static/style.css" />
+    <script src="https://cdn.tailwindcss.com"></script>
+  </head>
+  <body>
+    <div class="px-12 grid place-items-left">
+      <div id="drawingUI" class="my-12">
+        <div class="grid grid-cols-9 x-space-9" style="height: 590px; width: 1162px">
+          <!-- Canvas for drawing and reference image-->
+          <div class="col-xs-05 place-items-right">
+            <button
+              id="exitSelectionBtn"
+              class="border-2 p-2 rounded-md border-gray-200"
+              style="height:80px;width:80px"
+              title="Drawing Mode"
+            >
+            <font size="6">✎</font>
+            </button>
+            <button
+              id="toggleSelectionBtn"
+              class="border-2 p-2 rounded-md border-gray-200"
+              style="height:80px;width:80px"
+              title="Selection Mode"
+            >
+            <font size="6">⇱</font>
+            </button>
+            <button 
+              id="undoStrokeBtn"
+              class="border-2 p-2 rounded-md border-gray-200"
+              style="height:80px;width:80px"
+              title="Undo Stroke">
+              <font size="6">↺</font>
+            </button>
+            <button 
+              id="redoStrokeBtn"
+              class="border-2 p-2 rounded-md border-gray-200"
+              style="height:80px;width:80px"
+              title="Redo Stroke">
+              <font size="6">↻</font>
+            </button>
+            <button
+              class="border-2 p-2 rounded-md border-gray-200"
+              style="height:80px;width:80px"
+              id="toggleRefBtn"
+              title="Show/Hide Reference"
+            >
+            <font size="6">👁</font>
+            </button>
+            <button
+              class="border-2 p-2 rounded-md border-gray-200"
+              style="height:80px;width:80px"
+              id="toggleSketchBtn"
+              title="Show/Hide Strokes"
+            >
+            <font size="4">👁✎</font>
+            </button>
+            <button
+              class="border-2 p-2 rounded-md border-gray-200"
+              style="height:80px;width:80px"
+              id="saveOverlayBtn"
+              title="Save Current Visualization"
+              style="display: none"
+            >
+            <font size="6">⇩</font>
+            </button>
+            <div class="flex">
+              <button
+                id="constructionBtn"
+                class="border-2 p-2 rounded-md border-gray"
+                style="display: none"
+              >
+                √ Construction
+              </button>
+              <button
+                id="notConstructionBtn"
+                class="border-2 p-2 rounded-md border-gray"
+                style="display: none"
+              >
+              ✖️ Construction
+              </button>
+              <button
+                id="toggleTranslateBtn"
+                class="border-2 p-2 rounded-md border-gray"
+                style="display: none"
+              >
+                ↘ Translate
+              </button>
+              <button
+                class="border-2 p-2 rounded-md border-gray"
+                id="deleteSelectedBtn"
+                style="display: none"
+              >
+                ✖️ Delete
+              </button>
+        </div>
+          </div>
+          <div class="col-span-4 place-items-center">
+            <div id="canvas-container" style="position: relative">
+              <canvas
+                id="imageCanvas"
+                width="512px"
+                height="512px"
+                style="position: absolute; left: 0; top: 55px; z-index: 4"
+              ></canvas>
+              <canvas
+                id="drawingCanvas"
+                width="512px"
+                height="512px"
+                style="position: absolute; left: 0; top: 55px; z-index: 5"
+              ></canvas>
+              <canvas
+                id="hiddenCanvas"
+                width="512px"
+                height="512px"
+                style="position: absolute; left: 0; top: 55px; z-index: 3"
+              ></canvas>
+              <canvas
+                id="hiddenCanvas2"
+                width="512px"
+                height="512px"
+                style="position: absolute; left: 0; top: 55px; z-index: 1"
+              ></canvas>
+              <canvas
+                id="hiddenCanvas3"
+                width="512px"
+                height="512px"
+                style="position: absolute; left: 0; top: 55px; z-index: 2"
+              ></canvas>
+              <div
+                id="textBoxContainer"
+                style="position: absolute"
+                class="border border-4"
+              ></div>
+              <div
+                id="confirmBoxesContainer"
+                style="position: absolute"
+                class="border border-4"
+              ></div>
+              <div
+                id="backgroundTextBoxContainer"
+                style="position: absolute"
+                class="border border-4"
+              ></div>
+              <div class="p-2 border-2 rounded-md">
+                <button class="border-2 p-2 rounded-md" id="removeLastBoxBtn" style="display:none">
+                  ↺ Box
+                </button>
+                <input
+                  type="text"
+                  id="promptInput"
+                  style="width: 80%"
+                  placeholder="Enter a prompt"
+                  class="placeholder:italic placeholder:text-slate-300 bg-white w-full border border-slate-200 rounded-md py-2 pl-9 pr-3 shadow-sm focus:outline-none focus:border-sky-500 focus:ring-sky-500 focus:ring-1 sm:text-sm"
+                />
+                <button class="mt-2 border-2 p-2 rounded-md" id="generateBtn" title="Start Generation">
+                  GO!
+                </button>
+              </div>
+              <div>
+                <ul id="promptInputList">
+                </ul>
+              </div>
+            </div>
+          </div>
+
+          <div class="col-span-4 border-2 rounded-md">
+
+            <div class="slidecontainer" style="display:none">
+              Level of Detail: <output id="lod_val">1</output>
+              <input
+                type="range"
+                min="1"
+                max="3"
+                value="1"
+                class="slider"
+                id="lod"
+              />
+            </div>
+            <div class="border border-2 round-md" style="height:50px;width:50px;display:inline-block">
+              <button 
+                id="overlayDilationBtn"
+                title="Overlay Dilation">
+                <font size="6">❏</font>
+              </button>
+            </div>
+            <div class="slidecontainer border border-2 round-md" style="height:70px;width:200px;display:inline-block">
+              Number of Samples: <output id="num_images_val">6</output>
+              <input
+                type="range"
+                min="2"
+                max="8"
+                value="6"
+                class="slider"
+                step="2"
+                id="num_images"
+              />
+            </div>
+            <div class="slidecontainer border border-2 round-md" style="height:70px;width:250px;display:inline-block">
+              Blocking Dilation Strength:
+              <output id="dilation_val">65</output>
+              <input
+                type="range"
+                min="3"
+                max="133"
+                step="2"
+                value="65"
+                class="slider"
+                id="dilation"
+              />
+            </div>
+            <div>
+              <img
+                id="output_image"
+                width="420"
+                height="420"
+                src="./static/dummy/empty.png"
+              />
+            </div>
+            <div>
+                <ul id="reshape_image2clusterList">
+                    <!-- Images will be added here by JavaScript -->
+                </ul>
+                <ul id="imageclusterList">
+                  <!-- Images will be added here by JavaScript -->
+                </ul> 
+                <ul id="reshape_imageclusterList">
+                    <!-- Images will be added here by JavaScript -->
+                </ul>
+            </div>
+          </div>
+        </div>
+      </div>
+
+        <div class="border-2 p-2 rounded-md">
+          <input
+            type="checkbox"
+            id="autosaveBtn"
+            name="autosaveBtn"
+            checked
+          />
+          AutoSave on Generate
+        </div>
+
+        <div class="border-2 p-2 rounded-md">
+          <input
+            type="checkbox"
+            id="lcmBtn"
+            name="lcmBtn"
+          />
+          Use LCM Scheduler
+        </div>
+
+        <fieldset>
+          <div>
+            <input type="radio" id="our" name="model" value="our" checked />
+            <label for="low">Our ControlNet (v1.5)</label>
+          </div>
+
+          <div>
+            <input type="radio" id="orig" name="model" value="orig" />
+            <label for="high">Original ControlNet (v1.5 Scribble)</label>
+          </div>
+
+          <div class="slidecontainer">
+            Reshaping Strength:
+            <output id="strength_val">0.8</output>
+            <input
+              type="range"
+              min="0.0"
+              max="1.0"
+              step="0.1"
+              value="0.8"
+              class="slider"
+              id="strength"
+            />
+          </div>
+
+          <button class="border-2 p-1 rounded-md" id="debugFidBtn" style="display:none">
+            Show Stroke Fidelity Colors
+          </button>
+
+          <button class="border-2 p-2 rounded-md" id="overlayHEDBtn" style="display:none">
+            Overlay HED
+          </button>
+          <button class="border-2 p-2 rounded-md" id="overlayImageBtn" style="display:none">
+            Overlay Image
+          </button>
+        </fieldset>
+
+        <div class="grid grid-cols-5" style="display:none">
+          <p id="drawingStatus"><!-- Status updated by JavaScript --></p>
+          <p id="numStrokes"><!-- Stroke count updated by JavaScript --></p>
+        </div>
+
+        <div class="p-2 border-2 rounded-md grid place-items-center">
+          <div class="slidecontainer">
+            Num Inference Steps: <output id="numsteps_val">40</output>
+            <input
+              type="range"
+              min="1"
+              max="50"
+              value="40"
+              class="slider"
+              id="numsteps"
+            />
+          </div>
+          <div class="slidecontainer">
+            Guidance Scale: <output id="guidancescale_val">7</output>
+            <input
+              type="range"
+              min="0"
+              max="10"
+              value="7"
+              class="slider"
+              id="guidancescale"
+            />
+          </div>
+          <div class="slidecontainer">
+            ControNet Conditioning Scale:
+            <output id="controlnetscale_val">1.0</output>
+            <input
+              type="range"
+              min="0.0"
+              max="1.0"
+              step="0.1"
+              value="1.0"
+              class="slider"
+              id="controlnetscale"
+            />
+          </div>
+          <div class="slidecontainer">
+            Detail Dilation Strength:
+            <output id="contour_dilation_val">11</output>
+            <input
+              type="range"
+              min="3"
+              max="133"
+              step="2"
+              value="11"
+              class="slider"
+              id="contour_dilation"
+            />
+          </div>
+          <button 
+          id="overlayContourDilationBtn"
+          class="border-2 p-2 rounded-md border-gray-200">
+          Overlay Contour Dilation
+      </button>
+        </div>
+      </div>
+
+      <div class="col-span-1 col-span-1 m-6 space-y-3" style="display:none">
+        <div class="border-2 p-2 rounded-md border-gray-200 w-full" style="display:none">
+          <input type="checkbox" id="autogen" name="autogen" />
+          <font size="-2">Enable Auto-Gen</font>
+        </div>
+        <font size="-2">Time to next auto-generation:</font>
+        <p id="countdown"><font size="-2">30</font></p>
+        <div id="loader" class="loader"></div>
+        <p style="color: red" id="warning"></p>
+
+        <div class="border-2 p-2 rounded-md" style="display:none">
+          <input
+            type="checkbox"
+            id="toggleSelectionCompletionBoxBtn"
+            name="toggleSelectionCompletionBoxBtn"
+          />
+          Blocking
+        </div>
+
+        <button
+          class="border-2 p-2 rounded-md border-gray-200 w-full"
+          id="selectRefStrokeBtn"
+          style="display:none"
+        >
+          <font size="-2">Select Ref Stroke</font>
+        </button>
+
+        <button
+          class="border-2 p-2 rounded-md border-gray-200 w-full"
+          id="undoStrokeBtn"
+          style="display:none"
+        >
+          <font size="-2">↩ Undo Stroke</font>
+        </button>
+      </div>
+    </div>
+    <div class="col-span-1 col-span-1 m-6 space-y-3">
+      <script type="module" src="/static/js/main.js"></script>
+    </div>
+  </body>
+</html>
