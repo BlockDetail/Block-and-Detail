@@ -43,7 +43,7 @@ os.makedirs("./static/sketch", exist_ok=True)
 curr_out_dir = ""
 cluster_mode = "pix"
 num_images = 2
-num_gpus = 2
+num_gpus = torch.cuda.device_count()
 batch_size = num_images // (num_gpus)
 generating = False
 curr_fidelity = "low"
@@ -181,6 +181,10 @@ def save_drawing():
         
         
     return jsonify({'imageUrl': filepath, "drawid":filename.split(".")[0]})
+
+@app.route('/gpu-count', methods=['GET'])
+def gpu_count():
+    return jsonify({'num_gpus': torch.cuda.device_count()})
 
 @app.route('/clear-all', methods=['GET'])
 def clear_all():

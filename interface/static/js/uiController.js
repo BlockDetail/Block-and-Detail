@@ -4,7 +4,6 @@
 
 import {
   handleTextGenerate,
-  getKeyImages,
   getGenImages,
   reCluster,
   handleSaveLayer,
@@ -369,6 +368,22 @@ function setupSliders() {
 
   for (const [sliderId, displayId] of Object.entries(sliders)) {
     const slider = document.getElementById(sliderId);
+    if (sliderId == 'num_images') {
+      fetch("/gpu-count")
+        .then((response) => response.json())
+        .then((data) => {
+          const num_gpus = data["num_gpus"];
+          console.log(num_gpus);
+          document.getElementById(sliderId).min = num_gpus;
+          document.getElementById(sliderId).max = num_gpus * 5;
+          document.getElementById(sliderId).step = num_gpus;
+          document.getElementById(sliderId).value = num_gpus * 3;
+          document.getElementById(displayId).innerText = num_gpus * 3;
+        })
+        .catch((error) => {
+          console.error("Error:", error);
+        });
+    }
     slider.addEventListener("change", () => {
       document.getElementById(displayId).innerText = slider.value;
       if (sliderId === "numcluster") reCluster();
@@ -418,7 +433,6 @@ function setupKeydownListener() {
 
 function initializeUI() {
   clearAllLayers();
-  getKeyImages();
   document.getElementById("drawingStatus").innerText = "Ready to Draw";
   document.getElementById("numStrokes").innerText =
     "Number of Strokes on Canvas: 0";

@@ -201,20 +201,6 @@ export async function reCluster() {
     });
 }
 
-export function getKeyImages() {
-  fetch("/get-key-images")
-    .then((response) => response.json())
-    .then((images) => {
-      images.forEach((imageUrl) => {
-        console.log("keystroke layers:", imageUrl);
-        updateKeyImageList(imageUrl);
-      });
-    })
-    .catch((error) => {
-      console.error("Error:", error);
-    });
-}
-
 export async function clearAllLayers() {
   await fetch("/clear-all")
     .then((response) => response.json())
