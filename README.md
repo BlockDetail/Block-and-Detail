@@ -6,6 +6,8 @@
 We introduce a novel sketch-to-image tool that aligns with the iterative refinement process of artists. 
 Our tool lets users sketch **blocking** strokes to coarsely represent the placement and form of objects and **detail** strokes to refine their shape and silhouettes. 
 
+![alt text](https://github.com/BlockDetail/Block-and-Detail/blob/main/images/teaser.png?raw=true)
+
 # Setup
 
 With conda installed, create a new environment with the following commands:
@@ -28,6 +30,8 @@ cd Block-and-Detail/interface
 CUDA_VISIBLE_DEVICES=<available_gpu_ids> python app.py --port=<port_id>
 ```
 
+![alt text](https://github.com/BlockDetail/Block-and-Detail/blob/main/images/interface.png?raw=true)
+
 # Usage - Gradio Demo
 
 To run the gradio demo with limited functionality, run the following commands:
@@ -37,12 +41,6 @@ cd Block-and-Detail
 python run_gradio.py
 ```
 
-
-# Citation
-
-```
-@misc{}
-```
 
 # Acknowledgements
 
