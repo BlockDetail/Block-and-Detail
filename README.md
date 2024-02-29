@@ -1,7 +1,5 @@
 # Block and Detail: Scaffolding Sketch-to-Image Generation
 
-- [Paper]()
-
 We introduce a novel sketch-to-image tool that aligns with the iterative refinement process of artists. 
 Our tool lets users sketch **blocking** strokes to coarsely represent the placement and form of objects and **detail** strokes to refine their shape and silhouettes. 
 
@@ -31,6 +29,17 @@ CUDA_VISIBLE_DEVICES=<available_gpu_ids> python app.py --port=<port_id>
 
 ![alt text](https://github.com/BlockDetail/Block-and-Detail/blob/main/images/interface.png?raw=true)
 
+# Usage - Gradio Demo
+
+We also offer a gradio demo, but this demo is limited in functionality compared to our interface.  
+To run the gradio demo, run the following commands:
+
+```
+cd Block-and-Detail
+python run_gradio.py
+```
+
+![alt text](https://github.com/BlockDetail/Block-and-Detail/blob/main/images/gradio.png?raw=true)
 
 # Acknowledgements
 
