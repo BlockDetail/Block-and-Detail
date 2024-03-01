@@ -16,6 +16,7 @@ pipe = CustomStableDiffusionControlNetPipeline.from_pretrained(
 pipe.safety_checker = None
 pipe.scheduler = EulerAncestralDiscreteScheduler.from_config(pipe.scheduler.config)
 threshold = 250
+curr_num_samples = 2
 
 all_gens = []
 
@@ -44,23 +45,24 @@ with gr.Blocks() as demo:
                 gallery2 = gr.Gallery(show_label=False, columns=[num_samples[0].value], rows=[2], object_fit="contain", height="auto", preview=True, interactive=False).style(width=512, height=512)
             with gr.Tab("Pre-Renoise Overlay"):
                 gallery3 = gr.Gallery(show_label=False, columns=[num_samples[0].value], rows=[2], object_fit="contain", height="auto", preview=True, interactive=False).style(width=512, height=512)
-    for k in range(num_samples[0].value):
+    for k in range(num_images):
         start_state.append([None, None])
     sketch_states = gr.State(start_state)
     checkbox_state = gr.State(True)
         
     def sketch(curr_sketch_image, dilation_mask, prompt, seed, num_steps, dilation):
+        global curr_num_samples
         generator = torch.Generator(device="cuda:0")
         generator.manual_seed(seed)
 
         negative_prompt = ""
         guidance_scale = 7
         controlnet_conditioning_scale = 1.0
-        images = pipe([prompt]*num_samples[0].value, [curr_sketch_image.convert("RGB").point( lambda p: 256 if p > 128 else 0)]*num_samples[0].value, guidance_scale=guidance_scale, controlnet_conditioning_scale = controlnet_conditioning_scale, negative_prompt = [negative_prompt] * num_samples[0].value, num_inference_steps=num_steps, generator=generator, key_image=None, neg_mask=None).images
+        images = pipe([prompt]*curr_num_samples, [curr_sketch_image.convert("RGB").point( lambda p: 256 if p > 128 else 0)]*curr_num_samples, guidance_scale=guidance_scale, controlnet_conditioning_scale = controlnet_conditioning_scale, negative_prompt = [negative_prompt] * curr_num_samples, num_inference_steps=num_steps, generator=generator, key_image=None, neg_mask=None).images
 
         # run blended renoising if blocking strokes are provided
         if dilation_mask is not None: 
-            new_images = pipe.collage([prompt] * num_samples[0].value, images, [dilation_mask] * num_samples[0].value, num_inference_steps=50, strength=0.8)["images"]
+            new_images = pipe.collage([prompt] * curr_num_samples, images, [dilation_mask] * curr_num_samples, num_inference_steps=50, strength=0.8)["images"]
         else:
             new_images = images
         return images, new_images
@@ -73,11 +75,11 @@ with gr.Blocks() as demo:
 
         curr_sketch_image = Image.fromarray(curr_sketch[:, :, 0]).resize((512, 512))
 
-        curr_construction_image = Image.fromarray(255 - curr_sketch[:, :, 1] + curr_sketch[:, :, 0])
+        curr_construction_image = Image.fromarray(255 - curr_sketch[:, :, 2] + curr_sketch[:, :, 0])
         if np.sum(255 - np.array(curr_construction_image)) == 0:
             curr_construction_image = None
 
-        curr_detail_image = Image.fromarray(curr_sketch[:, :, 1]).resize((512, 512))
+        curr_detail_image = Image.fromarray(curr_sketch[:, :, 2]).resize((512, 512))
 
         if curr_construction_image is not None:
             dilation_mask = Image.fromarray(255 - np.array(curr_construction_image)).filter(ImageFilter.MaxFilter(dilation))
@@ -91,7 +93,7 @@ with gr.Blocks() as demo:
         else:
             dilation_mask = None
         
-        images, new_images = sketch(curr_sketch_image, dilation_mask, prompt, seed = seed, num_steps = 40, dilation = dilation)
+        images, new_images = sketch(curr_sketch_image, dilation_mask, prompt, seed, num_steps = 40, dilation = dilation)
 
         save_sketch = np.array(Image.fromarray(curr_sketch).convert("RGBA"))
         save_sketch[:, :, 3][save_sketch[:, :, 0] > 128] = 0
@@ -118,13 +120,13 @@ with gr.Blocks() as demo:
         return new_images, new_overlays, images, overlays
 
     def reset(sketch_states):
-        for k in range(num_samples[0].value):
+        for k in range(len(sketch_states)):
             sketch_states[k] = [None, None]
         return None, sketch_states
     
     def change_color(stroke_type):
         if stroke_type == "Blocking":
-            color = "#00FF00"
+            color = "#0000FF"
         else:
             color = "#000000"
         return gr.Image(source="canvas", shape=(512, 512), tool="color-sketch",
@@ -143,11 +145,13 @@ with gr.Blocks() as demo:
         image_overlay.putalpha(80)
         return image_overlay
 
-    def change_num_samples(a):
+    def change_num_samples(change):
+        global curr_num_samples
+        curr_num_samples = change
         return None
     
     btn.click(run_sketching, [prompt_box, canvas, sketch_states, dilation_strength[0]], [gallery0, gallery1, gallery2, gallery3])
-    btn2.click(reset, None, [canvas, sketch_states])
+    btn2.click(reset, sketch_states, [canvas, sketch_states])
     stroke_type[0].change(change_color, [stroke_type[0]], canvas)
     num_samples[0].change(change_num_samples, [num_samples[0]], None)
 

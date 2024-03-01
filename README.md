@@ -1,5 +1,7 @@
 # Block and Detail: Scaffolding Sketch-to-Image Generation
 
+[Live Demo]()
+
 We introduce a novel sketch-to-image tool that aligns with the iterative refinement process of artists. 
 Our tool lets users sketch **blocking** strokes to coarsely represent the placement and form of objects and **detail** strokes to refine their shape and silhouettes. 
 
