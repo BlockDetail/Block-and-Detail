@@ -16,6 +16,7 @@ from diffusers.utils.peft_utils import unscale_lora_layers
 from diffusers.utils.import_utils import is_torch_version
 from diffusers.pipelines.stable_diffusion.pipeline_output import StableDiffusionPipelineOutput
 from diffusers.utils import PIL_INTERPOLATION
+from diffusers.models.lora import adjust_lora_scale_text_encoder
 EXAMPLE_DOC_STRING = ""
 USE_PEFT_BACKEND = False
 
@@ -407,6 +408,7 @@ class CustomStableDiffusionControlNetPipeline(StableDiffusionControlNetPipeline)
 
         # 9. Denoising loop
         num_warmup_steps = len(timesteps) - num_inference_steps * self.scheduler.order
+        # print(len(timesteps), num_inference_steps, self.scheduler.order, num_warmup_steps)
         with self.progress_bar(total=num_inference_steps) as progress_bar:
             for i, t in enumerate(timesteps):
                 # expand the latents if we are doing classifier free guidance
@@ -436,7 +438,14 @@ class CustomStableDiffusionControlNetPipeline(StableDiffusionControlNetPipeline)
                 latents = self.scheduler.step(
                     noise_pred, t, latents, **extra_step_kwargs
                 ).prev_sample
+                
                 # masking
+
+                # mask_t = (mask > (1 - t/1000)).type(mask.dtype) # So when t is high, most of the mask is 1 (fixed), but when t is low, most of the mask is 0 (variable)
+                # dilate_size = (int)(4*t/1000)
+                # mask_t_dilated = torch.nn.functional.max_pool2d(mask_t, dilate_size*2 + 1, stride=1, padding=dilate_size)
+                # latents = (init_latents_orig * mask_t_dilated) + (latents * (1 - mask_t_dilated))
+
 
                 noise = torch.randn(
                     latents.shape,
@@ -444,9 +453,14 @@ class CustomStableDiffusionControlNetPipeline(StableDiffusionControlNetPipeline)
                     device=self.device,
                     dtype=text_embeddings.dtype,
                 )
-                init_latents_proper = self.scheduler.add_noise(
-                    init_latents_orig, noise, torch.tensor([t])
-                )
+                if i >= len(timesteps) - 1:
+                    init_latents_proper = self.scheduler.add_noise(
+                        init_latents_orig, noise, torch.tensor([t])
+                    )
+                else:
+                    init_latents_proper = self.scheduler.add_noise(
+                        init_latents_orig, noise, torch.tensor([timesteps[i + 1]])
+                    )
 
                 mask_t = (mask > (1 - t/1000)).type(mask.dtype) # So when t is high, most of the mask is 1 (fixed), but when t is low, most of the mask is 0 (variable)
                 dilate_size = (int)(4*t/1000)
@@ -751,6 +765,7 @@ class CustomStableDiffusionControlNetPipeline(StableDiffusionControlNetPipeline)
 
         # 8. Denoising loop
         num_warmup_steps = len(timesteps) - num_inference_steps * self.scheduler.order
+        # print(len(timesteps), num_inference_steps, self.scheduler.order, num_warmup_steps)
         is_unet_compiled = is_compiled_module(self.unet)
         is_controlnet_compiled = is_compiled_module(self.controlnet)
         is_torch_higher_equal_2_1 = is_torch_version(">=", "2.1")

@@ -12,7 +12,7 @@ import json
 from diffusers import ControlNetModel, EulerAncestralDiscreteScheduler, LCMScheduler
 import torch
 import numpy as np 
-from PIL import Image, ImageFilter
+from PIL import Image, ImageFilter, ImageOps
 import os
 from extension import CustomStableDiffusionControlNetPipeline
 import argparse
@@ -20,6 +20,12 @@ import open_clip
 import shutil
 from concurrent.futures import ThreadPoolExecutor, wait
 from torchvision import transforms
+
+torch._inductor.config.conv_1x1_as_mm = True
+torch._inductor.config.coordinate_descent_tuning = True
+torch._inductor.config.epilogue_fusion = False
+torch._inductor.config.coordinate_descent_check_all_directions = True
+
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--model", type=str, default="../partialsketchcontrolnet")
@@ -36,7 +42,7 @@ PREV_UPLOAD_FOLDER = 'static/previous_uploads'
 app.config['PREV_UPLOAD_FOLDER'] = PREV_UPLOAD_FOLDER
 
 os.makedirs("./static/previous_uploads", exist_ok=True)
-os.makedirs("./static/generated", exist_ok=True)
+# os.makedirs("./static/generated", exist_ok=True)
 os.makedirs("./static/sketch", exist_ok=True)
 
 # default parameters
@@ -55,68 +61,46 @@ selected_reference_image_path = "" # used for transforming the reference image i
 session_id = "" # used for keeping track of the current session
 session_prompt = "none"
 scheduler = "euler"
+pipe = None
+controlnet = None
+model_paths = {"our" : args.model,
+                    "orig" : "lllyasviel/sd-controlnet-scribble"}
+existing = []
+hide = ["dummy"]
 
 # load models only if not in ui debugging mode
-if (not args.ui_only): 
-    model_paths = {"our" : args.model,
-                "orig" : "lllyasviel/sd-controlnet-scribble"}
-    existing = []
-    hide = ["dummy"]
-
-    text_size, hole_scale, island_scale=512,100,100
-    text, text_part, text_thresh='','','0.0'
-
-    t = []
-    t.append(transforms.Resize(int(text_size), interpolation=Image.BICUBIC))
-    transform1 = transforms.Compose(t)
-
-    negative_prompt = ""
-    device = torch.device('cuda')
-    controlnets = [] 
-    pipes = []
-    segmenters = {"low":[], "mid":[], "high":[]}
-    for i in range(num_gpus):                              
-        controlnets.append(ControlNetModel.from_pretrained(model_paths["our"], torch_dtype=torch.float16).to(f"cuda:{i}"))
-        pipes.append(CustomStableDiffusionControlNetPipeline.from_pretrained(
-        "runwayml/stable-diffusion-v1-5",
-        controlnet=controlnets[i], torch_dtype=torch.float16
-        ).to(f"cuda:{i}"))
-    for i in range(num_gpus):
-        if scheduler == "euler":
-            pipes[i].safety_checker = None
-            pipes[i].scheduler = EulerAncestralDiscreteScheduler.from_config(pipes[i].scheduler.config)
-        else:
-            pipes[i].scheduler = LCMScheduler.from_config(pipes[i].scheduler.config)
-            pipes[i].load_lora_weights("latent-consistency/lcm-lora-sdv1-5")
-    threshold = 250
-    model, _, preprocess = open_clip.create_model_and_transforms('ViT-B-32', pretrained='laion2b_s34b_b79k')
 
 def sketch(construction, curr_sketch_image, dilation_mask, pipe_id, prompt, seed, negative_prompt, num_steps, guidance_scale, controlnet_conditioning_scale, strength):
     generator = torch.Generator(device=f"cuda:{pipe_id}")
-    generator.manual_seed(seed)
-    start = time.time()
+    generator.manual_seed(seed * (pipe_id + 1))
+    # all_images = [0] * num_images
+    # all_new_image_2 = [0] * num_images
 
     # generate initial images
     global batch_size
-    images = pipes[pipe_id]([prompt]*batch_size, [curr_sketch_image.convert("RGB").point( lambda p: 256 if p > 128 else 0)]*batch_size, guidance_scale=guidance_scale, controlnet_conditioning_scale = controlnet_conditioning_scale, negative_prompt = [negative_prompt] * batch_size, num_inference_steps=num_steps, generator=generator, key_image=None, neg_mask=None).images
-    
+    global scheduler
+    if scheduler == "lcm":
+        images = pipes[pipe_id]([prompt]*batch_size, [curr_sketch_image.convert("RGB").point( lambda p: 256 if p > 128 else 0)]*batch_size, cross_attention_kwargs={"scale": float(1.0)}, guidance_scale=guidance_scale, controlnet_conditioning_scale = controlnet_conditioning_scale, negative_prompt = [negative_prompt] * batch_size, num_inference_steps=num_steps, generator=generator, key_image=None, neg_mask=None).images
+    else:
+        images = pipes[pipe_id]([prompt]*batch_size, [curr_sketch_image.convert("RGB").point( lambda p: 256 if p > 128 else 0)]*batch_size, guidance_scale=guidance_scale, controlnet_conditioning_scale = controlnet_conditioning_scale, negative_prompt = [negative_prompt] * batch_size, num_inference_steps=num_steps, generator=generator, key_image=None, neg_mask=None).images
+
     # run blended renoising if blocking strokes are provided
     if construction: 
-        new_image_2 = pipes[pipe_id].collage([prompt] * batch_size, images, [dilation_mask] * batch_size, num_inference_steps=50, strength=strength)["images"]
+        new_image_2 = pipes[pipe_id].collage([prompt] * batch_size, images, [dilation_mask] * batch_size, num_inference_steps=num_steps, strength=strength)["images"]
     else:
         new_image_2 = images
-    print("time one image", time.time()-start)
+    # all_images[batch_size*distributed_state.process_index:batch_size*(distributed_state.process_index+1)] = images
+    # all_new_image_2[batch_size*distributed_state.process_index:batch_size*(distributed_state.process_index+1)] = new_image_2
 
-    return {"im": images, "idx": pipe_id, "reshape_im2": new_image_2}
+    return {"idx": pipe_id, "im": images, "reshape_im2": new_image_2}
 
-def run_sketching(construction, curr_sketch_image, dilation_mask, prompt, sketch_path, strength=0.8, guidance_scale=1.0, num_steps=4, controlnet_conditioning_scale = 0.5):
-    seeds = range(num_gpus)
+def run_sketching(construction, curr_sketch_image, dilation_mask, prompt, sketch_im, seed, strength=0.8, guidance_scale=1.0, num_steps=4, controlnet_conditioning_scale = 0.5):
     with ThreadPoolExecutor() as executor:
         futures = []
 
         # run image generation and renoising
         for k in range(num_gpus):
-            futures.append(executor.submit(sketch, construction, curr_sketch_image, dilation_mask, k, prompt, seeds[k] * 10, negative_prompt, num_steps, guidance_scale, controlnet_conditioning_scale, strength))
+            futures.append(executor.submit(sketch, construction, curr_sketch_image, dilation_mask, k, prompt, seed, negative_prompt, num_steps, guidance_scale, controlnet_conditioning_scale, strength))
         complete_futures, incomplete_futures = wait(futures)
         all_images = [0] * num_images
         reshape_images2 = [0] * num_images
@@ -129,7 +113,7 @@ def run_sketching(construction, curr_sketch_image, dilation_mask, prompt, sketch
             all_images[_idx * batch_size : (_idx+1) * batch_size] = im
             reshape_images2[_idx * batch_size : (_idx+1) * batch_size] = result["reshape_im2"]
             
-    return Image.open(sketch_path).convert("RGB"), all_images, reshape_images2
+    return sketch_im, all_images, reshape_images2
 
 def generate_session_id():
     return str(uuid.uuid4())
@@ -237,7 +221,7 @@ def get_images():
     images = glob.glob(os.path.join(app.config['PREV_UPLOAD_FOLDER'], "*.png")) + glob.glob(os.path.join(app.config['PREV_UPLOAD_FOLDER'], "sketch.png"))
     for im in images:
         if os.path.exists(im):
-            Image.fromarray(255 - np.array(Image.open(im))[:, :, -1]).convert("RGB").resize((256, 256)).save(im.replace(".png", ".png"))
+            ImageOps.invert(Image.open(im)).convert("RGB").resize((256, 256)).save(im.replace(".png", ".png"))
     image_urls = [file.replace(".png", ".png") for file in images if file.replace(".png", ".png") not in existing]
     existing += image_urls
     return jsonify(image_urls)
@@ -257,6 +241,7 @@ def generate_images():
     model = request.get_json()['model']
     strength = float(request.get_json()['strength'])
     dilation = int(request.get_json()['dilation'])
+    seed = int(request.get_json()['seed'])
     contour_dilation = int(request.get_json()['contour_dilation'])
     new_scheduler = request.get_json()['scheduler']
     
@@ -268,7 +253,7 @@ def generate_images():
     global scheduler
     num_images = int(request.get_json()['num_samples'])
     batch_size = int(num_images) // (num_gpus)
-
+    
     # load model only if changed
     if model != curr_model:
         global controlnets
@@ -277,29 +262,31 @@ def generate_images():
         del pipes
         controlnets = []
         pipes = []
-        for i in range(num_gpus):
-            controlnets.append(ControlNetModel.from_pretrained(model_paths[model], torch_dtype=torch.float16).to(f"cuda:{i}"))
+        for i in range(num_gpus):                              
+            controlnets.append(ControlNetModel.from_pretrained(model_paths["our"], torch_dtype=torch.float16).to(f"cuda:{i}"))
             pipes.append(CustomStableDiffusionControlNetPipeline.from_pretrained(
-                "runwayml/stable-diffusion-v1-5",
-                controlnet=controlnets[i], torch_dtype=torch.float16
-                ).to(f"cuda:{i}"))
+            "Lykon/dreamshaper-7",
+            controlnet=controlnets[i], torch_dtype=torch.float16
+            ).to(f"cuda:{i}"))
         for i in range(num_gpus):
-            pipes[i].safety_checker = None
             if scheduler == "euler":
+                pipes[i].safety_checker = None
                 pipes[i].scheduler = EulerAncestralDiscreteScheduler.from_config(pipes[i].scheduler.config)
             else:
                 pipes[i].scheduler = LCMScheduler.from_config(pipes[i].scheduler.config)
-                pipes[i].load_lora_weights("latent-consistency/lcm-lora-sdv1-5")       
+                pipes[i].load_lora_weights("latent-consistency/lcm-lora-sdv1-5")
+                pipes[i].fuse_lora()
         curr_model = model
 
         # change scheduler only if changed
         if new_scheduler != scheduler:
             scheduler = new_scheduler
             if scheduler == "euler":
-                pipes[i].scheduler = EulerAncestralDiscreteScheduler.from_config(pipes[i].scheduler.config)
+                pipe.scheduler = EulerAncestralDiscreteScheduler.from_config(pipe.scheduler.config)
             else:
-                pipes[i].scheduler = LCMScheduler.from_config(pipes[i].scheduler.config)
-                pipes[i].load_lora_weights("latent-consistency/lcm-lora-sdv1-5")
+                pipe.scheduler = LCMScheduler.from_config(pipe.scheduler.config)
+                pipe.load_lora_weights("latent-consistency/lcm-lora-sdv1-5")
+                pipe.fuse_lora()
 
     guidance_scale = float(request.get_json()['guidancescale'])
     controlnet_conditioning_scale = float(request.get_json()['controlnetscale'])
@@ -318,13 +305,13 @@ def generate_images():
     os.makedirs(folder, exist_ok=True)
 
     paths = glob.glob(os.path.join("./static/previous_uploads/drawing*.png"))
-    # also get pngs
-    paths += glob.glob(os.path.join("./static/previous_uploads/drawing*.png"))
     print("Has input sketch of layers:", len(paths))
     if (len(paths) == 0):
         print("No input sketch, exiting")
         generating = False
         return jsonify({})
+    else:
+        path = paths[0]
 
     subdir = "_".join(prompt.split(" "))
     out_dir = f"./static/examples/{subdir}"
@@ -334,25 +321,21 @@ def generate_images():
     curr_out_dir = out_dir
     
     # consturct input sketch and dilation mask
-    input_sketch = np.zeros((512, 512))
-    for path in paths:
-        input_sketch += (np.array(Image.open(path).resize((512, 512), resample=0))[:, :, -1])
+    input_sketch = np.array(Image.open(path).resize((512, 512), resample=0))[:, :, -1]
     input_sketch[input_sketch > 255] = 255
-    Image.fromarray(255 - input_sketch).convert("RGB").save("./static/sketch/input.png")
-    Image.fromarray(255 - np.array(Image.open(glob.glob(os.path.join("./static/previous_uploads/construction*.png"))[0]).resize((512, 512), resample=0))[:, :, -1]).convert("RGB").save("./static/sketch/construction.png")
-    Image.fromarray(255 - np.array(Image.open(glob.glob(os.path.join("./static/previous_uploads/construction*.png"))[0]).resize((512, 512), resample=0))[:, :, -1]).convert("RGB").save(f"{folder}/construction.png")
-    Image.fromarray(255 - np.array(Image.open(glob.glob(os.path.join("./static/previous_uploads/detail*.png"))[0]).resize((512, 512), resample=0))[:, :, -1]).convert("RGB").save("./static/sketch/detail.png")
-    Image.fromarray(255 - np.array(Image.open(glob.glob(os.path.join("./static/previous_uploads/detail*.png"))[0]).resize((512, 512), resample=0))[:, :, -1]).convert("RGB").save(f"{folder}/detail.png")
+    input_sketch_im = Image.fromarray(255 - input_sketch)
+    input_detail_im = Image.fromarray(255 - np.array(Image.open(path.replace("drawing", "detail-drawing")).resize((512, 512), resample=0))[:, :, -1]).convert("RGB")
+    input_construction_im = Image.fromarray(255 - np.array(Image.open(path.replace("drawing", "construction-drawing")).resize((512, 512), resample=0))[:, :, -1]).convert("RGB")
+    input_construction_im.save(f"{folder}/construction.png")
+    input_detail_im.save(f"{folder}/detail.png")
     Image.fromarray(input_sketch).convert("RGB").save(f"{folder}/input.png")
 
-    Image.fromarray(np.zeros((512, 512)).astype(np.uint8)).save(f"./static/sketch/contour_dilation.png")
-    Image.fromarray(np.zeros((512, 512)).astype(np.uint8)).save(f"./static/sketch/dilation.png")
     subdir = "_".join(prompt.split(" "))
     out_dir = f"./static/examples/{subdir}"
     os.makedirs(out_dir, exist_ok=True)
-    curr_sketch_image = Image.fromarray(np.array(Image.open("./static/sketch/input.png").convert("L"))).resize((512, 512))
+    curr_sketch_image = input_sketch_im.convert("L").resize((512, 512))
     curr_sketch = 255 - np.expand_dims(np.array(curr_sketch_image).astype(np.uint8), axis=-1).repeat(3, axis=-1)
-    curr_sketch = cv2.dilate(curr_sketch, np.ones((2, 2), np.uint8), iterations=1)
+    curr_sketch = cv2.dilate(curr_sketch, np.ones((3, 3), np.uint8), iterations=1)
     curr_sketch = cv2.medianBlur(curr_sketch, 3)
     curr_sketch = (curr_sketch + cv2.GaussianBlur(curr_sketch, (3, 3), 10))[:, :, 0]
     if curr_model == "our":
@@ -360,59 +343,62 @@ def generate_images():
     else:
         curr_sketch_image = Image.fromarray((curr_sketch).astype(np.uint8)).convert("L")
     curr_sketch_image.resize((512, 512)).save(f"./static/examples/{subdir}/input.png")
-    curr_sketch_image.resize((512, 512)).save(f"./examples/{subdir}/input.png")
 
     construction = True
     dilation_mask = None
-    curr_construction_image = Image.fromarray(np.array(Image.open("./static/sketch/input.png".replace("input", "construction")).convert("L"))).resize((512, 512))
+    curr_construction_image = input_construction_im.convert("L").resize((512, 512))
     if np.sum(255 - np.array(curr_construction_image)) == 0:
         construction = False
     curr_construction = 255 - np.expand_dims(np.array(curr_construction_image).astype(np.uint8), axis=-1).repeat(3, axis=-1)
-    curr_construction = cv2.dilate(curr_construction, np.ones((2, 2), np.uint8), iterations=1)
+    curr_construction = cv2.dilate(curr_construction, np.ones((3, 3), np.uint8), iterations=1)
     curr_construction = cv2.medianBlur(curr_construction, 3)
     curr_construction = (curr_construction + cv2.GaussianBlur(curr_construction, (3, 3), 10))[:, :, 0]
     curr_construction_image = Image.fromarray((255 - curr_construction).astype(np.uint8)).convert("L")
     curr_construction_image.resize((512, 512)).save(f"./static/examples/{subdir}/construction.png")
-    curr_construction_image.resize((512, 512)).save(f"./examples/{subdir}/construction.png")
 
-    curr_detail_image = Image.fromarray(np.array(Image.open("./static/sketch/input.png".replace("input", "detail")).convert("L"))).resize((512, 512))
+    curr_detail_image = input_detail_im.convert("L").resize((512, 512))
     curr_detail = 255 - np.expand_dims(np.array(curr_detail_image).astype(np.uint8), axis=-1).repeat(3, axis=-1)
-    curr_detail = cv2.dilate(curr_detail, np.ones((2, 2), np.uint8), iterations=1)
+    curr_detail = cv2.dilate(curr_detail, np.ones((3, 3), np.uint8), iterations=1)
     curr_detail = cv2.medianBlur(curr_detail, 3)
     curr_detail = (curr_detail + cv2.GaussianBlur(curr_detail, (3, 3), 10))[:, :, 0]
     curr_detail_image = Image.fromarray((255 - curr_detail).astype(np.uint8)).convert("L")
     curr_detail_image.resize((512, 512)).save(f"./static/examples/{subdir}/detail.png")
-    curr_detail_image.resize((512, 512)).save(f"./examples/{subdir}/detail.png")
+
     if construction:
-        dilation_mask = Image.fromarray(255 - np.array(curr_construction_image)).filter(ImageFilter.MaxFilter(dilation))
+        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (dilation, dilation))
+        dilation_mask = Image.fromarray(cv2.dilate(255 - np.array(curr_construction_image), kernel, iterations=1))
         dilation_mask = dilation_mask.point( lambda p: 256 if p > 0 else 25).filter(ImageFilter.GaussianBlur(radius = 5))
 
-        neg_dilation_mask = Image.fromarray(255 - np.array(curr_detail_image)).filter(ImageFilter.MaxFilter(contour_dilation)) 
-        neg_dilation_mask = np.array(neg_dilation_mask.point( lambda p: 256 if p > 0 else 0))
-        neg_dilation_mask_img = Image.fromarray(neg_dilation_mask).filter(ImageFilter.GaussianBlur(radius = 5))
-        neg_dilation_mask_img.save(f"./static/examples/{subdir}/contour_dilation.png")
+        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (contour_dilation, contour_dilation))
+        neg_dilation_mask = Image.fromarray(cv2.dilate(255 - np.array(curr_detail_image), kernel, iterations=1))
+
+        neg_dilation_mask_img = neg_dilation_mask.point( lambda p: 256 if p > 0 else 0).filter(ImageFilter.GaussianBlur(radius = 5))
         neg_dilation_mask_img.save(f"./static/sketch/contour_dilation.png")
         dilation_mask = np.array(dilation_mask)
-        dilation_mask[neg_dilation_mask > 0] = 25
+        dilation_mask[np.array(neg_dilation_mask) > 0] = 25
         dilation_mask = Image.fromarray(dilation_mask).filter(ImageFilter.GaussianBlur(radius = 5))
-        dilation_mask.save(f"./static/examples/{subdir}/dilation.png")
         dilation_mask.save(f"./static/sketch/dilation.png")
+    else:
+        Image.fromarray(np.zeros((512, 512)).astype(np.uint8)).save(f"./static/sketch/contour_dilation.png")
+        Image.fromarray(np.zeros((512, 512)).astype(np.uint8)).save(f"./static/sketch/dilation.png")
 
+    print("gen prep took", time.time() - start)
+    start = time.time()
     # generate images
-    out_sketch, images, reshape_images2 = run_sketching(construction, curr_sketch_image, dilation_mask, prompt,"./static/sketch/input.png", strength=strength, guidance_scale=guidance_scale, controlnet_conditioning_scale = controlnet_conditioning_scale, num_steps=num_steps)
-
+    out_sketch, images, reshape_images2 = run_sketching(construction, curr_sketch_image, dilation_mask, prompt, input_sketch_im, seed, strength=strength, guidance_scale=guidance_scale, controlnet_conditioning_scale = controlnet_conditioning_scale, num_steps=num_steps)
+    print("gen took", time.time() - start)
+    start = time.time()
     for i in range(len(images)):
-        images[i].save(f"./static/generated/{i}.png")
         images[i].resize((512, 512)).save(f"{curr_out_dir}/gen_{i}.png")
         reshape_images2[i].resize((512, 512)).save(f"{curr_out_dir}/reshape2_{i}.png")
 
     subdir = "_".join(prompt.split(" "))
 
-    Image.open(f"./examples/{subdir}/input.png").resize((512, 512)).save(f"{curr_out_dir}/input.png")
+    Image.open(f"./static/examples/{subdir}/input.png").resize((512, 512)).save(f"{curr_out_dir}/input.png")
 
     return_dict = {"generating": 0}
     return_dict[f"cluster0"] = [sorted(glob.glob(f"{out_dir}/gen_*.png"))]
-    print("gen took", time.time() - start)
+    print("post gen took", time.time() - start)
     generating = False
     return jsonify(return_dict)
 
@@ -513,4 +499,35 @@ def save_overlay():
     return jsonify({"name":f"{os.path.basename(curr_out_dir)}_{num}.zip", "link": os.path.join(os.getcwd(), app.config['SAVE_OVERLAY_FOLDER'], f"{os.path.basename(curr_out_dir)}_{num}.zip")})
 
 if __name__ == '__main__':
+    if (not args.ui_only): 
+
+        text_size, hole_scale, island_scale=512,100,100
+        text, text_part, text_thresh='','','0.0'
+
+        t = []
+        t.append(transforms.Resize(int(text_size), interpolation=Image.BICUBIC))
+        transform1 = transforms.Compose(t)
+
+        negative_prompt = ""
+        device = torch.device('cuda')
+        segmenters = {"low":[], "mid":[], "high":[]}
+        controlnets = []
+        pipes = []
+        for i in range(num_gpus):                              
+            controlnets.append(ControlNetModel.from_pretrained(model_paths["our"], torch_dtype=torch.float16).to(f"cuda:{i}"))
+            pipes.append(CustomStableDiffusionControlNetPipeline.from_pretrained(
+            "Lykon/dreamshaper-7",
+            controlnet=controlnets[i], torch_dtype=torch.float16
+            ).to(f"cuda:{i}"))
+        for i in range(num_gpus):
+            if scheduler == "euler":
+                pipes[i].safety_checker = None
+                pipes[i].scheduler = EulerAncestralDiscreteScheduler.from_config(pipes[i].scheduler.config)
+            else:
+                pipes[i].scheduler = LCMScheduler.from_config(pipes[i].scheduler.config)
+                pipes[i].load_lora_weights("latent-consistency/lcm-lora-sdv1-5")
+                pipes[i].fuse_lora()    
+        threshold = 250
+        model, _, preprocess = open_clip.create_model_and_transforms('ViT-B-32', pretrained='laion2b_s34b_b79k')
+
     app.run(debug=True, port=args.port, host="0.0.0.0")#, use_reloader=False)

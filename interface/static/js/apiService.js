@@ -54,6 +54,7 @@ export async function handleTextGenerate(selectedModel) {
         strength: document.getElementById("strength").value,
         dilation: document.getElementById("dilation").value,
         contour_dilation: document.getElementById("contour_dilation").value,
+        seed: document.getElementById("seed").value,
       }),
     })
       .then((response) => response.json())
