@@ -72,7 +72,7 @@ hide = ["dummy"]
 
 def sketch(construction, curr_sketch_image, dilation_mask, pipe_id, prompt, seed, negative_prompt, num_steps, guidance_scale, controlnet_conditioning_scale, strength):
     generator = torch.Generator(device=f"cuda:{pipe_id}")
-    generator.manual_seed(seed * (pipe_id + 1))
+    generator.manual_seed(seed + pipe_id * 10)
     # all_images = [0] * num_images
     # all_new_image_2 = [0] * num_images
 
