@@ -43,6 +43,14 @@ python run_gradio.py
 
 ![alt text](https://github.com/BlockDetail/Block-and-Detail/blob/main/images/gradio.png?raw=true)
 
+# Data Generation
+To generate training data for partial sketch ControlNet, we need foreground object masks and svg files of the extracted synthetic "sketches" of the target images.
+We used scripts from [CLIPascene]{https://github.com/yael-vinker/SceneSketch} for foreground object mask extraction and [VirtualSketching]{https://github.com/MarkMoHR/virtual_sketching} for svg file generation.
+Then run our data generation script for training partial sketch generation. 
+```
+python make_data.py --mask_path=MASK_PATH --svg_path=SVG_PATH
+```
+
 # Acknowledgements
 
 This repository is partially based on [Diffusers](https://github.com/huggingface/diffusers) and [Collage Diffusion](https://github.com/VSAnimator/collage-diffusion).
