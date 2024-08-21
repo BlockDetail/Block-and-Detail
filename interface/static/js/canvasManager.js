@@ -21,6 +21,7 @@ let showRef = false;
 
 let recentDeleted = [];
 let isConstruction = false
+let currRefType = 0;
 
 const canvas = document.getElementById("drawingCanvas");
 const ctx = canvas.getContext("2d");
@@ -88,6 +89,10 @@ export function setChanged(val) {
 
 export function returnRef() {
   return currRef;
+}
+
+export function refType() {
+  return currRefType;
 }
 
 export function redoStroke() {
@@ -246,6 +251,17 @@ export function setupReferenceCanvas(path) {
   referenceCtx.globalAlpha = 0.3;
   referenceImage.src = path;
   currRef = path;
+  let dirs = path.split("/");
+  let filename = dirs[dirs.length - 1];
+  console.log("refImage path", filename);
+  let isFileRef = currRefType;
+  if (filename.includes("gen")){
+    isFileRef = 1;
+  }
+  if (filename.includes("reshape")){
+    isFileRef = 1;
+  }
+  currRefType = isFileRef;
 }
 
 export function setupCanvasSketch(path) {

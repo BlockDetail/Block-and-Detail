@@ -9,13 +9,15 @@ import {
   updateGenImageList,
   showGenImages
 } from "./uiController.js";
-import { setupReferenceCanvas, clearStrokes, setupCanvasSketch, setChanged, setupDrawingCanvasSketch, getCompletionBoxData, getCompletionBoxesData, returnRef } from "./canvasManager.js";
+import { setupReferenceCanvas, clearStrokes, setupCanvasSketch, setChanged, setupDrawingCanvasSketch, getCompletionBoxData, getCompletionBoxesData, returnRef, refType } from "./canvasManager.js";
 const canvas = document.getElementById("hiddenCanvas");
 const constructionCanvas = document.getElementById("hiddenCanvas2");
 const detailCanvas = document.getElementById("hiddenCanvas3");
 
 var success = new Audio('static/dummy/success.wav');
 var failure = new Audio('static/dummy/failure.wav');
+
+let genRound = 0;
 
 export async function handleTextGenerate(selectedModel) {
   var promptText = "";
@@ -30,58 +32,71 @@ export async function handleTextGenerate(selectedModel) {
   if (document.getElementById("lcmBtn").checked) {
     scheduler = "lcm";
   }
-  if (promptText.trim()) {
-    document.getElementById("warning").innerHTML = "";
-    console.log("generate button", document.getElementById("generateBtn"));
-    document.getElementById("generateBtn").style.color = "red";
-    document.getElementById("generateBtn").innerHTML = "......";
-    setChanged(false);
-    await fetch("/generate-images", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        prompt: promptText,
-        model: selectedModel,
-        scheduler: scheduler,
-        num_cluster: 1,
-        num_samples: document.getElementById("num_images").value,
-        guidancescale: document.getElementById("guidancescale").value,
-        numsteps: document.getElementById("numsteps").value,
-        controlnetscale: document.getElementById("controlnetscale").value,
-        blocking: blocking,
-        strength: document.getElementById("strength").value,
-        dilation: document.getElementById("dilation").value,
-        contour_dilation: document.getElementById("contour_dilation").value,
-        seed: document.getElementById("seed").value,
-      }),
-    })
-      .then((response) => response.json())
-      .then((data) => {
-        // Handle the response data which should contain the generated images
-        clearGenImageList();
-        if (data["generating"] == 0) {
-          showGenImages("betterhed");
-          setupReferenceCanvas("./static/dummy/empty.png?" + Date.now());
-        }
-        console.log(data);
-      })
-      .then((data) => {
-        document.getElementById("generateBtn").style.color = "black";
-        document.getElementById("generateBtn").innerHTML = "GO!";
-        success.play();
-        var elm = document.getElementById('autosaveBtn');
-        if (elm.checked) {
-          saveOverlay();
-        }
-      })
-      .catch((error) => {
-        failure.play();
-        console.error("Error:", error);
-      });
+  let color_consistency = 0;
+  if (document.getElementById("colorconBtn").checked) {
+    color_consistency = 1;
+  }
+  let selectedRef = refType();
+  let refImage = returnRef();
+  if (color_consistency == 1 && selectedRef == 0 && genRound != 0) {
+    document.getElementById("warning").innerHTML = "!Ref Image Not Selected for Color Consistency!";
   } else {
-    document.getElementById("warning").innerHTML = "!No prompt entered!";
+    if (promptText.trim()) {
+      document.getElementById("warning").innerHTML = "";
+      console.log("generate button", document.getElementById("generateBtn"));
+      document.getElementById("generateBtn").style.color = "red";
+      document.getElementById("generateBtn").innerHTML = "......";
+      setChanged(false);
+      await fetch("/generate-images", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          prompt: promptText,
+          model: selectedModel,
+          scheduler: scheduler,
+          num_cluster: 1,
+          num_samples: document.getElementById("num_images").value,
+          guidancescale: document.getElementById("guidancescale").value,
+          numsteps: document.getElementById("numsteps").value,
+          controlnetscale: document.getElementById("controlnetscale").value,
+          blocking: blocking,
+          strength: document.getElementById("strength").value,
+          dilation: document.getElementById("dilation").value,
+          contour_dilation: document.getElementById("contour_dilation").value,
+          seed: document.getElementById("seed").value,
+          color_consistency: color_consistency,
+          ref_image: refImage,
+        }),
+      })
+        .then((response) => response.json())
+        .then((data) => {
+          // Handle the response data which should contain the generated images
+          clearGenImageList();
+          if (data["generating"] == 0) {
+            showGenImages("betterhed");
+            setupReferenceCanvas("./static/dummy/empty.png?" + Date.now());
+          }
+          console.log(data);
+        })
+        .then((data) => {
+          document.getElementById("generateBtn").style.color = "black";
+          document.getElementById("generateBtn").innerHTML = "GO!";
+          success.play();
+          var elm = document.getElementById('autosaveBtn');
+          if (elm.checked) {
+            saveOverlay();
+          }
+          genRound = genRound + 1;
+        })
+        .catch((error) => {
+          failure.play();
+          console.error("Error:", error);
+        });
+    } else {
+      document.getElementById("warning").innerHTML = "!No prompt entered!";
+    }
   }
 }
 

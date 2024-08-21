@@ -44,6 +44,7 @@ app.config['PREV_UPLOAD_FOLDER'] = PREV_UPLOAD_FOLDER
 os.makedirs("./static/previous_uploads", exist_ok=True)
 # os.makedirs("./static/generated", exist_ok=True)
 os.makedirs("./static/sketch", exist_ok=True)
+os.makedirs("./static/selected", exist_ok=True)
 
 # default parameters
 curr_out_dir = ""
@@ -67,6 +68,9 @@ model_paths = {"our" : args.model,
                     "orig" : "lllyasviel/sd-controlnet-scribble"}
 existing = []
 hide = ["dummy"]
+color_consistency = False
+gen_round = 0
+selected_round = 999
 
 # load models only if not in ui debugging mode
 
@@ -76,13 +80,18 @@ def sketch(construction, curr_sketch_image, dilation_mask, pipe_id, prompt, seed
     # all_images = [0] * num_images
     # all_new_image_2 = [0] * num_images
 
+    if color_consistency and gen_round != 0:
+        selected_image = Image.open("./static/selected/selected.png")
+    else:
+        selected_image = None
+
     # generate initial images
     global batch_size
     global scheduler
     if scheduler == "lcm":
-        images = pipes[pipe_id]([prompt]*batch_size, [curr_sketch_image.convert("RGB").point( lambda p: 256 if p > 128 else 0)]*batch_size, cross_attention_kwargs={"scale": float(1.0)}, guidance_scale=guidance_scale, controlnet_conditioning_scale = controlnet_conditioning_scale, negative_prompt = [negative_prompt] * batch_size, num_inference_steps=num_steps, generator=generator, key_image=None, neg_mask=None).images
+        images = pipes[pipe_id]([selected_image]*batch_size, [prompt]*batch_size, [curr_sketch_image.convert("RGB").point( lambda p: 256 if p > 128 else 0)]*batch_size, cross_attention_kwargs={"scale": float(1.0)}, guidance_scale=guidance_scale, controlnet_conditioning_scale = controlnet_conditioning_scale, negative_prompt = [negative_prompt] * batch_size, num_inference_steps=num_steps, generator=generator, key_image=None, neg_mask=None).images
     else:
-        images = pipes[pipe_id]([prompt]*batch_size, [curr_sketch_image.convert("RGB").point( lambda p: 256 if p > 128 else 0)]*batch_size, guidance_scale=guidance_scale, controlnet_conditioning_scale = controlnet_conditioning_scale, negative_prompt = [negative_prompt] * batch_size, num_inference_steps=num_steps, generator=generator, key_image=None, neg_mask=None).images
+        images = pipes[pipe_id]([selected_image]*batch_size, [prompt]*batch_size, [curr_sketch_image.convert("RGB").point( lambda p: 256 if p > 128 else 0)]*batch_size, guidance_scale=guidance_scale, controlnet_conditioning_scale = controlnet_conditioning_scale, negative_prompt = [negative_prompt] * batch_size, num_inference_steps=num_steps, generator=generator, key_image=None, neg_mask=None).images
 
     # run blended renoising if blocking strokes are provided
     if construction: 
@@ -251,6 +260,12 @@ def generate_images():
     global num_images
     global batch_size
     global scheduler
+    global gen_round
+    global color_consistency
+    global selected_round
+    color_consistency = int(request.get_json()['color_consistency']) == 1
+    if color_consistency == False:
+        selected_round = 999
     num_images = int(request.get_json()['num_samples'])
     batch_size = int(num_images) // (num_gpus)
     
@@ -400,6 +415,7 @@ def generate_images():
     return_dict[f"cluster0"] = [sorted(glob.glob(f"{out_dir}/gen_*.png"))]
     print("post gen took", time.time() - start)
     generating = False
+    gen_round += 1
     return jsonify(return_dict)
 
 @app.route('/update-selected-ref-img', methods=['POST'])
@@ -410,6 +426,23 @@ def update_selected_ref_img():
     
     print("Selected reference image path:", selected_reference_image_path)
     return jsonify({"success": 1})
+
+@app.route('/update-selected-ref-img-selected', methods=['POST'])
+def update_selected_ref_img_selectedd():
+    global selected_reference_image_path
+    selected_reference_image_path = request.get_json()['path']
+    selected_reference_image_path = selected_reference_image_path.split("?")[0]
+    global gen_round
+    global selected_round
+    global color_consistency
+    if gen_round <= selected_round or not color_consistency:
+        if os.path.exists(selected_reference_image_path):
+            selected_round = gen_round
+            Image.open(selected_reference_image_path).save(os.path.join(f"./static/selected/selected.png"))
+    
+    print("Selected reference image path:", selected_reference_image_path)
+    return jsonify({"success": 1})
+
 
 @app.route("/save-overlay", methods=["POST"])
 def save_overlay():

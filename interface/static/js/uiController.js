@@ -96,13 +96,14 @@ export function updateGenImageList(listname, imageUrl, hide) {
 
   });
   image.addEventListener("click", function () {
-    fetch("/update-selected-ref-img", {
+    fetch("/update-selected-ref-img-selected", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({ path: imageUrl }),
-    }) // not waiting for response
+    }
+    ) // not waiting for response
 
     setupReferenceCanvas(imageUrl);
     let im = document.getElementById('output_image');
