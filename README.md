@@ -1,4 +1,4 @@
-# Block and Detail: Scaffolding Sketch-to-Image Generation
+# Block and Detail: Scaffolding Sketch-to-Image Generation (UIST 2024)
 
 > **Vishnu Sarukkai, Lu Yuan\*, Mia Tang\*, Maneesh Agrawala, Kayvon Fatahalian**
 >
