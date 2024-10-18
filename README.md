@@ -55,7 +55,7 @@ cd Block-and-Detail
 python run_gradio.py
 ```
 
-![alt text](https://github.com/BlockDetail/Block-and-Detail/blob/main/images/gradio.png?raw=true)
+![Gradio Interface](docs/gradio.png)
 
 ## Data Generation
 
