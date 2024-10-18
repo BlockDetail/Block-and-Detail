@@ -2,25 +2,24 @@
  * This file contains the functions to manage the canvas
  */
 let isDrawing = false; // decide if we record the stroke
-let isChanged = false;
 let currentStroke = null; // single stroke
 let currentLayer = []; // array of strokes
 
 let isSelecting = false;  // Are we in selection mode?
+let startTime, startX, startY; // Used to detect quick click on the canvas to exit selection mode
 let selectionStart = null;  // Starting point of the selection rectangle
 let selectionRect = null;  // Current dimensions of the selection rectangle
 let selectedStrokes = [];  // Array to keep track of selected strokes
 let isTranslating = false;  // Are we in translation mode?
 let translationStart = null;  // Starting point for translation
 let showDraw = true;
-
+let showRef = false;
 let currRef = null;
 
 let refImg = "/static/dummy/empty.png"
-let showRef = false;
 
 let recentDeleted = [];
-let isConstruction = false
+let isConstruction = true // in UI, we start with blocking mode
 let currRefType = 0;
 
 const canvas = document.getElementById("drawingCanvas");
@@ -35,26 +34,12 @@ const hiddenCanvas2 = document.getElementById("hiddenCanvas2");
 const hiddenCtx2 = hiddenCanvas2.getContext("2d");
 const hiddenCanvas3 = document.getElementById("hiddenCanvas3");
 const hiddenCtx3 = hiddenCanvas3.getContext("2d");
+const deleteButton = document.getElementById('deleteSelectedBtn');
+const undoStrokeBtn = document.getElementById('undoStrokeBtn');
+const redoStrokeBtn = document.getElementById('redoStrokeBtn');
+const toggleSelectionBtn = document.getElementById('toggleSelectionBtn');
 
-// selecting for completion
-let isSelectingCompletionBox = false; // Are we creating a completion box?
-let selectionCompletionBoxStart = null;  // Starting point of the selection rectangle
-let selectionCompletionBoxRect = null;  // Current dimensions of the selection rectangle
-let completionBoxes = [];  // Array to keep track of all completion boxes
-let completionInputElems = []; // Array to keep track of all completion input elements
-
-let colors = ["rgba(69, 255, 87, 0.7)",
-  "rgba(161, 73, 197, 0.7)",
-  "rgba(200, 0, 19, 0.7)",
-  "rgba(39, 170, 255, 0.7)",
-  "rgba(0, 234, 234, 0.7)",
-  "rgba(236, 153, 0, 0.7)",
-  "rgba(108, 190, 244, 0.7)",
-  "rgba(0, 230, 151, 0.7)",
-  "rgba(160, 232, 27, 0.7)",
-  "rgba(127, 127, 127, 0.7)",
-  "rgba(100, 50, 255, 0.7)",
-  "rgba(255, 50, 145, 0.7)",]
+const canvasContainer = document.getElementById("outer-container");
 
 /***
  * Public functions
@@ -68,23 +53,20 @@ export function initCanvas() {
   setupDrawingCanvas();
   setupReferenceCanvas(refImg);
   document.getElementById("deleteSelectedBtn").addEventListener("click", deleteSelectedStrokes);
-  document.getElementById("constructionBtn").addEventListener("click", markConstruction);
-  document.getElementById("notConstructionBtn").addEventListener("click", notConstruction);
-}
-export function layerLength() {
-  return currentLayer.length;
-}
+  document.getElementById("block").addEventListener('click', function () {
+    console.log("Block mode");
+    isConstruction = true;
 
-export function isCurrDrawing() {
-  return isDrawing;
-}
+    // if there is a selection, mark them as construction
+    markConstruction();
+  })
+  document.getElementById("detail").addEventListener("click", function () {
+    console.log("Detail mode");
+    isConstruction = false;
 
-export function checkChanged() {
-  return isChanged;
-}
-
-export function setChanged(val) {
-  isChanged = val;
+    // if there is a selection, mark them as not construction
+    notConstruction();
+  });
 }
 
 export function returnRef() {
@@ -135,39 +117,45 @@ export function undoStroke() {
   }
 }
 
-export function clearLayer() {
-  currentLayer = [];
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-}
-
 
 export function clearStrokes() {
   currentLayer = [];
   currentStroke = null;
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   clearAllLayers();
+  redrawCanvas();
 }
-
 
 export function toggleReference() {
   showRef = !showRef;
+  const btn = document.getElementById("toggleRefBtn");
   if (showRef) {
     setupReferenceCanvas(refImg);
-    document.getElementById("toggleRefBtn").innerHTML = '👁';
+    btn.innerHTML = "Hide Image";
+
   } else {
     clearRefLayer();
-    document.getElementById("toggleRefBtn").innerHTML = '👁';
+    btn.innerHTML = "Show Image";
   }
+}
+
+export function removeReference() {
+  showRef = false
+  const btn = document.getElementById("toggleRefBtn");
+  clearRefLayer();
+  btn.classList.add("hidden");
+}
+
+export function showReferenceCanvas() {
+  showRef = true
 }
 
 function redrawCanvas() {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   currentLayer.forEach(drawStroke);
-  // console.log("ctx strokes", currentLayer);
 
   hiddenCtx.clearRect(0, 0, hiddenCanvas.width, hiddenCanvas.height);
   currentLayer.forEach(drawHiddenStroke);
-  // console.log("hiddenctx strokes", currentLayer);
 
   hiddenCtx2.clearRect(0, 0, hiddenCanvas2.width, hiddenCanvas2.height);
   currentLayer.forEach(stroke => {
@@ -193,24 +181,6 @@ function redrawCanvas() {
     }
   }
 
-  if (isSelectingCompletionBox) {
-    if (selectionCompletionBoxRect) {
-      ctx.strokeStyle = "rgba(0, 255, 0, 0.5)";
-      ctx.strokeRect(selectionCompletionBoxRect.x, selectionCompletionBoxRect.y, selectionCompletionBoxRect.width, selectionCompletionBoxRect.height);
-
-    }
-  }
-
-  let i = 0;
-
-  completionBoxes.forEach(box => {
-    if (i > colors.length) {
-      i = 0;
-    }
-    ctx.strokeStyle = colors[i];
-    ctx.strokeRect(box.x, box.y, box.width, box.height);
-    i++;
-  })
 }
 
 export function clearDrawCanvas() {
@@ -220,9 +190,9 @@ export function clearDrawCanvas() {
   hiddenCtx3.clearRect(0, 0, canvas.width, canvas.height);
 }
 
-export function toggleDrawCanvas() {
+export function toggleDrawCanvas(showDrawStatus) {
 
-  showDraw = !showDraw;
+  showDraw = showDrawStatus;
   if (showDraw) {
     redrawCanvas();
   } else {
@@ -231,13 +201,33 @@ export function toggleDrawCanvas() {
 }
 
 export function setupReferenceCanvas(path) {
+  if (!showRef) {
+    toggleReference(); // we turn it on
+  }
   showRef = true;
-  document.getElementById("toggleRefBtn").innerHTML = '👁';
+
+  console.log("Setting up reference canvas", path)
+
+  const has_hidden = document.getElementById("toggleRefBtn").classList.contains("hidden");
+  if (!path.includes("empty")) {
+    // actual sample image
+    if (has_hidden) {
+      console.log("Enabling toggle ref button")
+      document.getElementById("toggleRefBtn").classList.remove("hidden");
+    }
+  } else {
+    if (!has_hidden) {
+      document.getElementById("toggleRefBtn").classList.add("hidden");
+      console.log("Disabling toggle ref button")
+    }
+  }
+
 
   refImg = path; // save the latest path for toggle
 
   // For reference
   referenceCtx.clearRect(0, 0, referenceCanvas.width, referenceCanvas.height);
+  referenceCtx.globalAlpha = 0.3;
   const referenceImage = new Image();
   referenceImage.onload = function () {
     referenceCtx.drawImage(
@@ -248,18 +238,39 @@ export function setupReferenceCanvas(path) {
       referenceCanvas.height
     );
   };
-  referenceCtx.globalAlpha = 0.3;
   referenceImage.src = path;
   currRef = path;
   let dirs = path.split("/");
   let filename = dirs[dirs.length - 1];
   console.log("refImage path", filename);
   let isFileRef = currRefType;
-  if (filename.includes("gen")){
+  if (filename.includes("gen")) {
     isFileRef = 1;
+
+    // Add red border to the modal because this is naive result
+    const modal_div = document.getElementById("modal");
+    modal_div.classList.add("border-red-500");
+    const modal_caption = document.getElementById("modal-caption");
+    modal_caption.classList.add("text-red-500");
+
+    // also add border to ref canvas
+    canvasContainer.classList.add("outline-red-500");
+
   }
-  if (filename.includes("reshape")){
+  if (filename.includes("reshape")) {
     isFileRef = 1;
+
+    // Remove red border if it exists
+    const modal_div = document.getElementById("modal");
+    if (modal_div.classList.contains("border-red-500")) {
+      modal_div.classList.remove("border-red-500");
+    }
+    const modal_caption = document.getElementById("modal-caption");
+    if (modal_caption.classList.contains("text-red-500")) {
+      modal_caption.classList.remove("text-red-500");
+    }
+
+    canvasContainer.classList.remove("outline-red-500");
   }
   currRefType = isFileRef;
 }
@@ -296,16 +307,26 @@ export function setupDrawingCanvasSketch(path) {
   referenceImage.src = path;
 }
 
-export function toggleSelectionMode(select) {
-  isSelecting = select;
 
+function changeText(button, staticVerb) {
+  // Find the text node within the button
+  const textNode = Array.from(button.childNodes).find(node => node.nodeType === Node.TEXT_NODE);
+  console.log("textNode", textNode)
+  if (textNode && textNode.textContent.trim() === staticVerb) {
+    textNode.textContent = staticVerb + 'ing ';
+  } else if (textNode && textNode.textContent.trim() === staticVerb + 'ing') {
+    textNode.textContent = staticVerb;
+  }
+}
+
+export function toggleSelectionMode() {
+  isSelecting = !isSelecting;
   function turnOnSelectionMode() {
     selectedStrokes = []; // Clear the selected strokes when entering selection mode
     isDrawing = false; // Disable drawing mode when entering selection mode
     // Update the canvas cursor style
     canvas.style.cursor = isSelecting ? 'crosshair' : 'default';
   }
-
   function turnOffSelectionMode() {
     isDrawing = true; // Enable drawing mode when exiting selection mode
     selectedStrokes = []; // Clear the selected strokes when exiting selection mode
@@ -313,8 +334,13 @@ export function toggleSelectionMode(select) {
 
     // also turn off translation mode
     isTranslating = false;
-    document.getElementById("toggleTranslateBtn").innerHTML = 'Translate Selected Strokes';
     canvas.style.cursor = 'default';
+
+    // also turn off moving mode
+    isTranslating = false;
+    canvas.style.cursor = 'default';  // Default cursor when exiting translation mode
+    selectionRect = null;
+
   }
 
   if (isSelecting) {
@@ -324,29 +350,42 @@ export function toggleSelectionMode(select) {
   }
 
   redrawCanvas();
+
+  changeText(document.getElementById("toggleSelectionBtn"), 'Select');
 }
 
+
 export function toggleTranslateMode() {
-  isTranslating = !isTranslating;
-  // Update button text based on the mode
-  document.getElementById("toggleTranslateBtn").innerHTML = isTranslating ? 'Exit Translate Mode' : 'Translate Selected Strokes';
-  // Update the canvas cursor style based on the mode
-  if (isTranslating) {
-    canvas.style.cursor = 'grab';  // Hand cursor when in translation mode
-  } else {
-    canvas.style.cursor = 'default';  // Default cursor when exiting translation mode
+  if (isSelecting) {
+    console.log("Toggle translate mode")
+    isTranslating = !isTranslating;
+    // Update button text based on the mode
+    if (isTranslating) {
+      canvas.style.cursor = 'grab';  // Hand cursor when in translation mode
+    }
+    else {
+      canvas.style.cursor = 'default';  // Default cursor when exiting translation mode
+    }
+    if (!isTranslating) {
+      selectionRect = null;
+    }
+    redrawCanvas();
   }
-  if (!isTranslating) {
-    selectionRect = null;
-  }
-  redrawCanvas();
 }
 
 export function deleteSelectedStrokes() {
+  if (selectedStrokes.length == 0) {
+    alert("No strokes selected to delete! Please select strokes by clicking on select, and dragging a selection box around them.");
+    return;
+  }
+
   console.log("Deleting selected strokes: " + selectedStrokes.length)
   currentLayer = currentLayer.filter(stroke => !selectedStrokes.includes(stroke));
+  recentDeleted = recentDeleted.concat(selectedStrokes);
   selectedStrokes = [];
   selectionRect = null;
+  isTranslating = false;
+  canvas.style.cursor = 'default';  // Default cursor when exiting translation mode
   redrawCanvas();
 }
 
@@ -372,6 +411,38 @@ export function markConstruction() {
     console.log("Marking current as construction stroke")
     currentStroke.color = "lime";
   }
+
+  // we change the radio button to select "Block"
+  const radioBtn = document.getElementById("block");
+  radioBtn.checked = true;
+  isConstruction = true;
+}
+
+export function markDetail() {
+  if (isSelecting) {
+    selectedStrokes.forEach(stroke => {
+      if (stroke.color != "black") { stroke.color = "black"; }
+      else if (stroke.color == "black") {
+        stroke.color = "lime";
+      }
+    });
+    console.log("Marking selected as detail strokes: " + selectedStrokes.length)
+    selectedStrokes = [];
+    selectionRect = null;
+    redrawCanvas();
+  }
+
+  if (currentStroke && currentStroke.color != "black") {
+    console.log("Marking current as detail stroke")
+    currentStroke.color = "black";
+  }
+
+
+  const radioBtn = document.getElementById("detail");
+  const blockBtn = document.getElementById("block");
+  radioBtn.checked = true;
+  blockBtn.checked = false;
+  isConstruction = false;
 }
 
 export function notConstruction() {
@@ -386,9 +457,6 @@ export function notConstruction() {
   redrawCanvas();
 }
 
-export function imageToStroke(img) {
-
-}
 
 /***
  * Private functions
@@ -402,14 +470,18 @@ function setupDrawingCanvas() {
   canvas.addEventListener("mouseleave", handleMouseLeave); // Optional, if you want to cancel the selection when the mouse leaves the canvas
 }
 
+
+
 function handleMouseDown(e) {
+  startTime = Date.now();
+  startX = e.clientX;
+  startY = e.clientY;
+
   if (isTranslating && isStrokeInSelection({ points: [{ x: e.offsetX, y: e.offsetY }] })) {
     // Start translation if the click is within the selection rectangle
     translationStart = { x: e.offsetX, y: e.offsetY };
   } else if (isSelecting) {
     startSelection(e);
-  } else if (isSelectingCompletionBox) {
-    startCompletionBoxSelection(e)
   } else {
     document.addEventListener('keydown', function (event) {
       const key = event.key; // const {key} = event; ES6+
@@ -433,22 +505,50 @@ function handleMouseMove(e) {
     translationStart = { x: e.offsetX, y: e.offsetY }; // Update for continuous translation
   } else if (isSelecting && selectionStart) {
     updateSelection(e);
-  } else if (isSelectingCompletionBox && selectionCompletionBoxStart) {
-    updateCompletionBoxSelection(e);
   } else if (isDrawing && currentStroke) {
     continueDrawing(e);
   }
 }
 
-function handleMouseUp() {
-  translationStart = null;
-  if (isSelecting) {
+function handleMouseUp(e) {
+  const endTime = Date.now();
+  const endX = e.clientX;
+  const endY = e.clientY;
+  const timeDiff = endTime - startTime;
+  const distance = Math.sqrt(Math.pow(endX - startX, 2) + Math.pow(endY - startY, 2));
+
+  // Thresholds to consider it a quick click (not a drag)
+  const maxTime = 200; // milliseconds
+  const maxDistance = 5; // pixels
+
+  // Check if we clicked the delete button
+  // Get the bounding box of the delete button
+  const buttonsToCheck = [deleteButton, undoStrokeBtn, redoStrokeBtn, toggleSelectionBtn];
+  for (const button of buttonsToCheck) {
+    const buttonRect = button.getBoundingClientRect();
+    const isClickOnButton =
+      endX >= buttonRect.left &&
+      endX <= buttonRect.right &&
+      endY >= buttonRect.top &&
+      endY <= buttonRect.bottom;
+    if (isClickOnButton) {
+      // Click was on the button, do nothing or return early
+      console.log('Click was on the delete button.');
+      return;
+    }
+  }
+
+  if (timeDiff < maxTime && distance < maxDistance && isSelecting) {
+    // It's a quick click, exit selection mode
+    console.log('Quick click detected, removing selection box.');
     finishSelection();
-  } else if (isSelectingCompletionBox) {
-    finishCompletionBoxSelection();
-  } else if (isDrawing) {
-    finishDrawing();
-    isChanged = true;
+  } else {
+    translationStart = null;
+    if (isSelecting) {
+      finishSelection();
+    } else if (isDrawing) {
+      finishDrawing();
+    }
   }
 }
 function handleMouseLeave() {
@@ -456,11 +556,15 @@ function handleMouseLeave() {
 }
 
 function startDrawing(e) {
-  document.getElementById("drawingStatus").innerHTML = '<font size="1">Drawing!</font>';
+  console.log("Start drawing stroke", isConstruction)
   isDrawing = true;
+  let color = "black";
+  if (isConstruction) {
+    color = "lime";
+  }
   currentStroke = {
     points: [{ x: e.offsetX, y: e.offsetY }],
-    color: "black",
+    color: color,
     width: ctx.lineWidth,
   };
   ctx.beginPath();
@@ -481,11 +585,9 @@ function continueDrawing(e) {
 function finishDrawing() {
   if (isDrawing && currentStroke) {
     ctx.closePath();
-    isConstruction = false;
     currentLayer.push(currentStroke);
     currentStroke = null;
     isDrawing = false;
-    recentDeleted = [];
     console.log("Finished drawing stroke: " + currentLayer.length)
     redrawCanvas();
   }
@@ -537,50 +639,11 @@ function drawHiddenStroke3(stroke) {
   hiddenCtx3.stroke();
 }
 
-function drawRefStroke(stroke) {
-  referenceCtx.strokeStyle = stroke.color;
-  referenceCtx.lineWidth = stroke.width;
-  referenceCtx.beginPath();
-  referenceCtx.moveTo(stroke.points[0].x, stroke.points[0].y);
-  stroke.points.forEach(point => {
-    referenceCtx.lineTo(point.x, point.y);
-  });
-  referenceCtx.stroke();
-}
 
 function clearRefLayer() {
   referenceCtx.clearRect(0, 0, referenceCanvas.width, referenceCanvas.height);
 }
 
-/***
- * COMPLETION BOX
- */
-
-function startCompletionBoxSelection(e) {
-  selectionCompletionBoxStart = { x: e.offsetX, y: e.offsetY };
-  selectionCompletionBoxRect = { x: e.offsetX, y: e.offsetY, width: 0, height: 0 };
-  console.log("Start Completion Box Selection")
-}
-
-function updateCompletionBoxSelection(e) {
-  selectionCompletionBoxRect.width = e.offsetX - selectionCompletionBoxRect.x;
-  selectionCompletionBoxRect.height = e.offsetY - selectionCompletionBoxRect.y;
-  redrawCanvas(); // Redraw the canvas to show the selection rectangle
-  addConfirmBoxToCanvas();
-}
-
-function finishCompletionBoxSelection() {
-  selectionCompletionBoxStart = null;
-  redrawCanvas(); // Redraw the canvas to remove the selection rectangle
-}
-
-export function getCompletionBoxData() {
-  return selectionCompletionBoxRect;
-}
-
-export function getCompletionBoxesData() {
-  return completionBoxes;
-}
 
 /***
  * SELECTION 
@@ -595,12 +658,27 @@ function updateSelection(e) {
   if (isTranslating) {
     return; // Don't update the selection rectangle if we are translating
   }
-  selectionRect.width = e.offsetX - selectionRect.x;
-  selectionRect.height = e.offsetY - selectionRect.y;
-  redrawCanvas(); // Redraw the canvas to show the selection rectangle
+  if (selectionRect) {
+    selectionRect.width = e.offsetX - selectionRect.x;
+    selectionRect.height = e.offsetY - selectionRect.y;
+    redrawCanvas(); // Redraw the canvas to show the selection rectangle
+  }
 }
 
 function finishSelection() {
+  // allow translate mode
+  if (selectedStrokes.length > 0) {
+    isTranslating = true;
+    canvas.style.cursor = 'all-scroll';  // Hand cursor when in translation mode
+    console.log("Turning on translation mode")
+    // Show the delete button
+    deleteButton.classList.remove('hidden');
+  } else {
+    // no selected strokes
+    deleteButton.classList.add('hidden');
+    canvas.style.cursor = 'crosshair';  // Default cursor when exiting translation mode
+  }
+
   selectStrokes();
   selectionStart = null;
   redrawCanvas(); // Redraw the canvas to remove the selection rectangle
@@ -611,6 +689,19 @@ function selectStrokes() {
   selectedStrokes = currentLayer.filter(stroke => isStrokeInSelection(stroke));
   console.log("Selected strokes:", selectedStrokes.length)
   highlightSelectedStrokes();
+
+  if (selectedStrokes.length == 0) {
+    isTranslating = false;
+    canvas.style.cursor = 'crosshair'; // crosshair cursor when in selection mode
+
+    deleteButton.classList.add('hidden');
+  } else {
+    isTranslating = true;
+    canvas.style.cursor = 'all-scroll';  // Hand cursor when in translation mode
+
+    // add delete button
+    deleteButton.classList.remove('hidden');
+  }
 }
 
 function highlightSelectedStrokes() {
@@ -637,6 +728,9 @@ function isPointInSelection(point) {
   // Check if the point is inside the selection rectangle
   const x = point.x;
   const y = point.y;
+  if (!selectionRect) {
+    return false;
+  }
   const left = selectionRect.x;
   const right = selectionRect.x + selectionRect.width;
   const top = selectionRect.y;
@@ -723,47 +817,4 @@ function translateSelectedStrokes(deltaX, deltaY) {
     }));
   });
   redrawCanvas();
-}
-
-function handleConfirmBoxSubmit() {
-  console.log("Fixing the box")
-  completionBoxes.push(selectionCompletionBoxRect);
-  let boxIdx = completionBoxes.length - 1;
-
-  // add prompt box for completion
-  addTextBoxToCanvasForCompletion(boxIdx);
-
-  // cleanup
-  finishCompletionBoxSelection();
-  selectionCompletionBoxRect = null;
-  redrawCanvas();
-
-  // remove UI
-  var container = document.getElementById('confirmBoxesContainer');
-  container.innerHTML = "";
-
-  console.log("Currently have " + completionBoxes.length + " boxes")
-}
-
-function addConfirmBoxToCanvas() {
-  if (document.getElementById('confirmBoxesContainer')) {
-    // remove it
-    document.getElementById('confirmBoxesContainer').innerHTML = "";
-  }
-
-  // Create a button around mouse coordinates
-  const container = document.getElementById('confirmBoxesContainer');
-  var confirmButton = document.createElement('button');
-  confirmButton.innerText = 'Confirm Box';
-  confirmButton.onclick = function () {
-    handleConfirmBoxSubmit();
-  };
-  var buttonContainer = document.createElement('div');
-  buttonContainer.className = "absolute border rounded bg-lime-200"
-  buttonContainer.style.left = selectionCompletionBoxRect.x + selectionCompletionBoxRect.width + 'px';
-  buttonContainer.style.top = selectionCompletionBoxRect.y + selectionCompletionBoxRect.height + 'px';
-  buttonContainer.style.zIndex = 100;  // Make sure the text box is on top of the canvas
-
-  buttonContainer.appendChild(confirmButton);
-  container.appendChild(buttonContainer);
 }

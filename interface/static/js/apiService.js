@@ -3,13 +3,11 @@
  */
 
 import {
-  updateImageList,
-  updateKeyImageList,
-  clearGenImageList,
   updateGenImageList,
-  showGenImages
+  showGenImages,
+  updateImageResultList
 } from "./uiController.js";
-import { setupReferenceCanvas, clearStrokes, setupCanvasSketch, setChanged, setupDrawingCanvasSketch, getCompletionBoxData, getCompletionBoxesData, returnRef, refType } from "./canvasManager.js";
+import { setupReferenceCanvas, returnRef, refType } from "./canvasManager.js";
 const canvas = document.getElementById("hiddenCanvas");
 const constructionCanvas = document.getElementById("hiddenCanvas2");
 const detailCanvas = document.getElementById("hiddenCanvas3");
@@ -18,20 +16,17 @@ var success = new Audio('static/dummy/success.wav');
 var failure = new Audio('static/dummy/failure.wav');
 
 let genRound = 0;
+const NUM_GEN_SAMPLES = 4;
 
 export async function handleTextGenerate(selectedModel) {
   var promptText = "";
-  let boxes = getCompletionBoxesData();
   promptText = document.getElementById("promptInput").value;
-  console.log("in handle image generate", promptText, promptText.trim());
+  console.log("in handle image generate", promptText, " trimmed:", promptText.trim());
 
   await clearAllLayers();
   let drawid = await handleSaveLayer();
   let blocking = false;
   let scheduler = "euler";
-  if (document.getElementById("lcmBtn").checked) {
-    scheduler = "lcm";
-  }
   let color_consistency = 0;
   if (document.getElementById("colorconBtn").checked) {
     color_consistency = 1;
@@ -43,10 +38,9 @@ export async function handleTextGenerate(selectedModel) {
   } else {
     if (promptText.trim()) {
       document.getElementById("warning").innerHTML = "";
-      console.log("generate button", document.getElementById("generateBtn"));
       document.getElementById("generateBtn").style.color = "red";
       document.getElementById("generateBtn").innerHTML = "......";
-      setChanged(false);
+      document.getElementById('loader-overlay').classList.remove('hidden');
       await fetch("/generate-images", {
         method: "POST",
         headers: {
@@ -57,14 +51,14 @@ export async function handleTextGenerate(selectedModel) {
           model: selectedModel,
           scheduler: scheduler,
           num_cluster: 1,
-          num_samples: document.getElementById("num_images").value,
+          num_samples: NUM_GEN_SAMPLES,  //document.getElementById("num_images").value,
           guidancescale: document.getElementById("guidancescale").value,
           numsteps: document.getElementById("numsteps").value,
           controlnetscale: document.getElementById("controlnetscale").value,
           blocking: blocking,
-          strength: document.getElementById("strength").value,
-          dilation: document.getElementById("dilation").value,
-          contour_dilation: document.getElementById("contour_dilation").value,
+          strength: document.getElementById("strength_val").value,
+          dilation: document.getElementById("dilationOutput").value,
+          contour_dilation: document.getElementById("detailOutput").value,
           seed: document.getElementById("seed").value,
           color_consistency: color_consistency,
           ref_image: refImage,
@@ -73,22 +67,18 @@ export async function handleTextGenerate(selectedModel) {
         .then((response) => response.json())
         .then((data) => {
           // Handle the response data which should contain the generated images
-          clearGenImageList();
           if (data["generating"] == 0) {
-            showGenImages("betterhed");
+            showGenImages();
             setupReferenceCanvas("./static/dummy/empty.png?" + Date.now());
           }
           console.log(data);
         })
         .then((data) => {
-          document.getElementById("generateBtn").style.color = "black";
-          document.getElementById("generateBtn").innerHTML = "GO!";
+          document.getElementById("generateBtn").style.color = "white";
+          document.getElementById("generateBtn").innerHTML = "Generate!";
           success.play();
-          var elm = document.getElementById('autosaveBtn');
-          if (elm.checked) {
-            saveOverlay();
-          }
           genRound = genRound + 1;
+          document.getElementById('loader-overlay').classList.add('hidden');
         })
         .catch((error) => {
           failure.play();
@@ -111,7 +101,7 @@ export async function handleSaveLayer() {
     headers: {
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({ data: pixelData, detail: detailData, construction: constructionData }), //JSON.stringify({ layers: layers }),
+    body: JSON.stringify({ data: pixelData, detail: detailData, construction: constructionData }),
   })
     .then((response) => response.json())
     .then((data) => {
@@ -125,37 +115,20 @@ export async function handleSaveLayer() {
   return drawid;
 }
 
-export function getImages() {
-  fetch("/get-images")
-    .then((response) => response.json())
-    .then((images) => {
-      images.forEach((imageUrl) => {
-        updateImageList(imageUrl + "?" + Date.now());
-      });
-    })
-    .catch((error) => {
-      console.error("Error:", error);
-    });
-}
-
-export async function getGenImages(type) {
+export async function getGenImages() {
   let selectedVisMode = "";
-  clearGenImageList();
+  // clearGenImageList();
   let i = 0;
   let modes = ["reshape_image2", "image"];
   while (i < modes.length) {
     selectedVisMode = modes[i];
-    if (selectedVisMode.includes("gaussian")) {
-      type = "image";
-    }
-    console.log("type", type);
     await fetch("/get-gen-images", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        type: type,
+        type: "betterhed", // not sure what this is for
         num_cluster: 1,
         fid: "low", // placeholder to not break the API
         vis_mode: selectedVisMode,
@@ -165,56 +138,26 @@ export async function getGenImages(type) {
         return response.json();
       })
       .then((images) => {
-        console.log("hidden list", images["hide"]);
-        console.log("current list name: ", selectedVisMode + "clusterList");
-        const list = document.getElementById(selectedVisMode + "clusterList");
-        console.log("apiservice", selectedVisMode + "clusterList", list)
-        images["labels"].forEach((clusterid) => {
-          const divItem = document.createElement("div");
-          const ulItem = document.createElement("ul");
-          divItem.style.width = "180px";
-          divItem.style.display = "inline-block";
-          divItem.style.verticalAlign = "top";
-          ulItem.id = "genImageList" + i;
-          divItem.appendChild(ulItem);
-          list.appendChild(divItem);
-          console.log("current list images: ", i, images["cluster0"][0]);
-          images["cluster0"][0].forEach((imageUrl) => {
-            console.log("curr image", imageUrl);
-            updateGenImageList(
-              "genImageList" + i,
-              imageUrl + "?" + Date.now(),
-              images["hide"].includes(imageUrl)
-            );
+        updateImageResultList(selectedVisMode, images["cluster0"]);
+
+        if (selectedVisMode == "reshape_image2") {
+          // our results
+          images["labels"].forEach((clusterid) => {
+            let numSamples = images["cluster0"][0].length;
+            for (let j = 0; j < numSamples; j++) {
+              updateGenImageList(
+                images["cluster0"][j] + "?" + Date.now(),
+                j
+              );
+            }
           });
-        });
-        console.log("images: ", images);
+        }
       })
       .catch((error) => {
         console.error("Error:", error);
       });
     i++;
   }
-}
-
-export async function reCluster() {
-  clearGenImageList();
-  await fetch("/re-cluster", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      num_cluster: 1,
-    }),
-  })
-    .then((response) => response.json())
-    .then((images) => {
-      getGenImages("image");
-    })
-    .catch((error) => {
-      console.error("Error:", error);
-    });
 }
 
 export async function clearAllLayers() {
@@ -225,36 +168,3 @@ export async function clearAllLayers() {
     });
 }
 
-export async function saveOverlay() {
-  await fetch("/save-overlay", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ url: returnRef(), prompt: document.getElementById("promptInput").value }),
-  })
-    .then((response) => {
-      let data = response.json();
-      return data;
-    })
-    .catch((error) => {
-      console.error("Error:", error);
-    });
-}
-
-export async function transformImageToStrokes() {
-  console.log("in transform image to strokes");
-  await fetch("/transform-img-to-strokes", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ test: "hello" }),
-  })
-    .then((response) => {
-      return response.json();
-    })
-    .catch((error) => {
-      console.error("Error:", error);
-    });
-}

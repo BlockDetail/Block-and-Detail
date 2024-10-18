@@ -1,409 +1,422 @@
 <!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <!-- <title>Sketch-A-Sketch</title> -->
-    <link rel="stylesheet" href="static/style.css" />
-    <script src="https://cdn.tailwindcss.com"></script>
-  </head>
-  <body>
-    <div class="px-12 grid place-items-left">
-      <div id="drawingUI" class="my-12">
-        <div class="grid grid-cols-9 x-space-9" style="height: 590px; width: 1162px">
-          <!-- Canvas for drawing and reference image-->
-          <div class="col-xs-05 place-items-right">
-            <button
-              id="exitSelectionBtn"
-              class="border-2 p-2 rounded-md border-gray-200"
-              style="height:80px;width:80px"
-              title="Drawing Mode"
-            >
-            <font size="6">✎</font>
-            </button>
-            <button
-              id="toggleSelectionBtn"
-              class="border-2 p-2 rounded-md border-gray-200"
-              style="height:80px;width:80px"
-              title="Selection Mode"
-            >
-            <font size="6">⇱</font>
-            </button>
-            <button 
-              id="undoStrokeBtn"
-              class="border-2 p-2 rounded-md border-gray-200"
-              style="height:80px;width:80px"
-              title="Undo Stroke">
-              <font size="6">↺</font>
-            </button>
-            <button 
-              id="redoStrokeBtn"
-              class="border-2 p-2 rounded-md border-gray-200"
-              style="height:80px;width:80px"
-              title="Redo Stroke">
-              <font size="6">↻</font>
-            </button>
-            <button
-              class="border-2 p-2 rounded-md border-gray-200"
-              style="height:80px;width:80px"
-              id="toggleRefBtn"
-              title="Show/Hide Reference"
-            >
-            <font size="6">👁</font>
-            </button>
-            <button
-              class="border-2 p-2 rounded-md border-gray-200"
-              style="height:80px;width:80px"
-              id="toggleSketchBtn"
-              title="Show/Hide Strokes"
-            >
-            <font size="4">👁✎</font>
-            </button>
-            <button
-              class="border-2 p-2 rounded-md border-gray-200"
-              style="height:80px;width:80px"
-              id="saveOverlayBtn"
-              title="Save Current Visualization"
-              style="display: none"
-            >
-            <font size="6">⇩</font>
-            </button>
-            <input id="seed" type="number" class="border-2 p-2 rounded-md border-gray-200" style="height:30px;width:80px" title="Seed" value="0" />
-            <div class="flex">
-              <button
-                id="constructionBtn"
-                class="border-2 p-2 rounded-md border-gray"
-                style="display: none"
-              >
-                √ Construction
-              </button>
-              <button
-                id="notConstructionBtn"
-                class="border-2 p-2 rounded-md border-gray"
-                style="display: none"
-              >
-              ✖️ Construction
-              </button>
-              <button
-                id="toggleTranslateBtn"
-                class="border-2 p-2 rounded-md border-gray"
-                style="display: none"
-              >
-                ↘ Translate
-              </button>
-              <button
-                class="border-2 p-2 rounded-md border-gray"
-                id="deleteSelectedBtn"
-                style="display: none"
-              >
-                ✖️ Delete
-              </button>
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Block and Detail</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    html {
+      overflow-y: scroll;
+      /* Always show scrollbar to prevent shifting */
+    }
+
+    .results-container {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      grid-template-rows: repeat(2, 1fr);
+      gap: 2px;
+      width: 512px;
+      height: 512px;
+      position: relative;
+      /* Ensure positioning context for the modal */
+    }
+
+    .result-image-wrapper {
+      position: relative;
+      overflow: hidden;
+    }
+
+    .result-image-wrapper img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      cursor: pointer;
+    }
+
+    #modal {
+      visibility: visible;
+      /* Make modal always visible */
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.8);
+      align-items: center;
+      z-index: 1000;
+      transform: scale(0);
+      transition: opacity 0.5s ease, transform 0.3s ease;
+    }
+
+    #modal.show {
+      opacity: 1;
+      transform: scale(1);
+      /* Scale to full size */
+    }
+
+    #modal img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+
+
+    #close-button {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      font-size: 24px;
+      color: white;
+      background: transparent;
+      border: none;
+      cursor: pointer;
+    }
+
+    /* Loader Animation */
+    .loader {
+      border: 4px solid #e5e7eb;
+      /* Light gray */
+      border-top: 4px solid #9ca3af;
+      /* Darker gray for spinner effect */
+      border-radius: 50%;
+      width: 50px;
+      height: 50px;
+      animation: spin 1s linear infinite;
+    }
+
+    @keyframes spin {
+      0% {
+        transform: rotate(0deg);
+      }
+
+      100% {
+        transform: rotate(360deg);
+      }
+    }
+
+    /* Ensure the overlay covers the entire viewport */
+    .loader-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      z-index: 50;
+      background-color: rgba(0, 0, 0, 0.5);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+    }
+  </style>
+</head>
+
+<body class="select-none">
+  <div class="flex justify-center items-center max-w-screen w-fit h-fit px-2 pt-2 mx-auto pb-4">
+
+    <!-- title -->
+    <div class="space-y-1">
+      <div id="title_container" class="py-1 flex justify-between">
+        <h1 class="text-xl font-bold">Block and Detail Demo</h1>
+        <div class="flex space-x-5">
+          <a href="https://miatang13.github.io/BlockAndDetail/" class="text-violet-500 flex pl-1 pt-1 hover:text-violet-800 hover:bg-violet-100 hover:text-violet-700 hover:rounded-sm underline" target="_blank"> Project Webpage
+          </a>
+          <a href="https://www.youtube.com/watch?v=JGYlX9ULPww" class="text-violet-500 flex pl-1 pt-1 hover:text-violet-800 hover:bg-violet-100 hover:text-violet-700 hover:rounded-sm underline" target="_blank">Instruction Video
+          </a>
         </div>
+      </div>
+
+      <!-- main content -->
+      <div id="main_content_container" class="flex overflow-x-auto max-w-screen gap-x-2">
+
+        <div id="left_panel_container" class="flex-1 w-fit max-w-[150px] min-w-[110px]">
+          <div class="mb-1" style="height:55px">
+            <div class=" h-full grid place-self-center">
+              <button class="px-2 my-2 bg-violet-50 text-violet-500 rounded-lg hover:bg-violet-500 hover:text-white focus:outline-none focus:ring-2 focus:ring-violet-500 focus:ring-opacity-75 transition ease-in-out duration-50 border border-1 block flex gap-x-2 text-sm flex items-center justify-center w-full" id="new-sketch-btn">
+                New Sketch
+              </button>
+            </div>
+
           </div>
-          <div class="col-span-4 place-items-center">
-            <div id="canvas-container" style="position: relative">
-              <canvas
-                id="imageCanvas"
-                width="512px"
-                height="512px"
-                style="position: absolute; left: 0; top: 55px; z-index: 4"
-              ></canvas>
-              <canvas
-                id="drawingCanvas"
-                width="512px"
-                height="512px"
-                style="position: absolute; left: 0; top: 55px; z-index: 5"
-              ></canvas>
-              <canvas
-                id="hiddenCanvas"
-                width="512px"
-                height="512px"
-                style="position: absolute; left: 0; top: 55px; z-index: 3"
-              ></canvas>
-              <canvas
-                id="hiddenCanvas2"
-                width="512px"
-                height="512px"
-                style="position: absolute; left: 0; top: 55px; z-index: 1"
-              ></canvas>
-              <canvas
-                id="hiddenCanvas3"
-                width="512px"
-                height="512px"
-                style="position: absolute; left: 0; top: 55px; z-index: 2"
-              ></canvas>
-              <div
-                id="textBoxContainer"
-                style="position: absolute"
-                class="border border-4"
-              ></div>
-              <div
-                id="confirmBoxesContainer"
-                style="position: absolute"
-                class="border border-4"
-              ></div>
-              <div
-                id="backgroundTextBoxContainer"
-                style="position: absolute"
-                class="border border-4"
-              ></div>
-              <div class="p-2 border-2 rounded-md">
-                <button class="border-2 p-2 rounded-md" id="removeLastBoxBtn" style="display:none">
-                  ↺ Box
-                </button>
-                <input
-                  type="text"
-                  id="promptInput"
-                  style="width: 80%"
-                  placeholder="Enter a prompt"
-                  class="placeholder:italic placeholder:text-slate-300 bg-white w-full border border-slate-200 rounded-md py-2 pl-9 pr-3 shadow-sm focus:outline-none focus:border-sky-500 focus:ring-sky-500 focus:ring-1 sm:text-sm"
-                />
-                <button class="mt-2 border-2 p-2 rounded-md" id="generateBtn" title="Start Generation">
-                  GO!
-                </button>
+
+          <div class="border border-1 rounded-md p-1 h-fit mb-2 w-full">
+            <h2 class="text-sm uppercase text-gray-500 mb-2">Stroke Mode</h2>
+            <div class="flex flex-col">
+              <div><input type="radio" id="block" name="stroke_mode" value="block" checked />
+                <label class="text-sm text-slate-500" for="block">Blocking</label>
               </div>
+              <div> <input type="radio" id="detail" name="stroke_mode" value="detail" />
+                <label class="text-sm text-slate-500" for="detail">Detail</label>
+              </div>
+
+            </div>
+          </div>
+
+          <div class="border border-1 rounded-md p-2 h-fit mb-2">
+            <div id="gen-params-title-wrapper" class="text-sm">
+              <h3 class="uppercase text-gray-500"> Dilation Strengths</h3>
+            </div>
+
+            <div id="gen-params-sliders-wrapper" class="pt-2 text-sm">
+              <div class="slidecontainer">
+                <span class="text-sm text-slate-500"> Blocking: <output id="dilationOutput">65</output> </span>
+                <input type="range" min="3" max="133" step="2" value="65" class="flex-shrink w-full max-w-xs" id="dilation" oninput="dilationOutput.value = this.value" />
+                <br />
+              </div>
+
+              <div class="slidecontainer">
+                <span class="text-sm text-slate-500"> Detail <output id="detailOutput">11</output> <br /></span>
+                <input type="range" min="3" max="133" step="2" value="11" class="flex-shrink w-full max-w-xs" id="contour_dilation" oninput="detailOutput.value = this.value" />
+
+              </div>
+
               <div>
-                <ul id="promptInputList">
-                </ul>
+                <input type="checkbox" id="colorconBtn" name="pres_color" value="pres_color" />
+                <label for="pres_color"> <span class="text-sm text-slate-500">Preserve Colors</span></label>
+              </div>
+
+
+              <div id="advanced-btn-n-div" class="block"> <!-- start of advanced -->
+                <div class="flex justify-end mr-2">
+                  <button class="flex items-center space-x-2" id="advanced-setting-btn">
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth="1.5" stroke="currentColor" class="h-6 w-6">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M8.625 12a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Zm0 0H8.25m4.125 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Zm0 0H12m4.125 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Zm0 0h-.375M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
+                    </svg>
+                  </button>
+                </div>
+
+              </div>
+              <div id="advanced-setting-wrapper" class="hidden mt-1 p-1 bg-white border border-gray-300 rounded-lg shadow-sm">
+                <h2 class="uppercase text-gray-500 mb-2">Advanced</h2>
+                <div>
+                  <input type="radio" id="our" name="model" value="our" checked />
+                  <label for="low"><span class="text-sm text-slate-500 text-xs">Our ControlNet (v1.5)</span></label>
+                </div>
+
+                <div>
+                  <input type="radio" id="orig" name="model" value="orig" />
+                  <label for="high"><span class="text-xs text-slate-500 text-xs">ControlNet (v1.5
+                      Scribble) </span></label>
+                </div>
+
+                <div class="slidecontainer ">
+                  <span class="text-sm text-slate-500 text-xs"> Num Inference Steps: <output id="numsteps_val">25
+                    </output> </span> <br />
+                  <input type="range" min="2" max="50" value="8" class="flex-shrink w-full max-w-xs" id="numsteps" oninput="numsteps_val.value = this.value" />
+
+                </div>
+                <div class="slidecontainer">
+                  <span class="text-sm text-slate-500 text-xs"> Guidance Scale:<output id="guidancescale_val">7</output></span> <br />
+                  <input type="range" min="0" max="10" value="7" class="flex-shrink w-full max-w-xs" id="guidancescale" oninput="guidancescale_val.value = this.value" />
+                </div>
+                <div class="slidecontainer">
+                  <span class="text-sm text-slate-500 text-xs"> ControNet Condition Scale: <output id="controlnetscale_val">1.0</output></span>
+                  <input type="range" min="0.0" max="1.0" step="0.1" value="1.0" class="flex-shrink w-full max-w-xs" id="controlnetscale" oninput="controlnetscale_val.value = this.value" />
+                  <br />
+                </div>
+
+                <div class="slidecontainer">
+                  <span class="text-sm text-slate-500 text-xs"> Reshaping Strength: <output id="strength_val">0.8</output></span>
+
+                  <input type="range" min="0.0" max="1.0" step="0.1" value="0.8" class="flex-shrink w-full max-w-xs" id="strength" oninput="strength_val.value = this.value" />
+                </div>
+
+                <div>
+                  <span class="text-sm text-slate-500 text-xs"> Seed </span><input id="seed" type="number" class="border-2 p-2 rounded-md border-gray-200" style="height:30px;width:80px" title="Seed" value="0" />
+                </div>
+
+              </div> <!--end of advanced-->
+            </div>
+          </div>
+
+          <!-- hotkeys -->
+          <div class="border border-1 rounded-md p-2 h-fit">
+            <h2 class="text-sm uppercase text-gray-500">Hotkeys</h2>
+            <div class="flex flex-col gap-y-2 mt-2 place-content-center">
+              <div class="grid grid-cols-3">
+                <p class="text-xs text-blue-500 font-bold bg-blue-50 outline-2 outline-slate-200 p-2 w-fit rounded-md h-fit">
+                  b</p>
+                <p class="text-xs p-2 text-slate-500 col-span-2">Block</p>
+              </div>
+
+              <div class="grid grid-cols-3">
+                <p class="text-xs text-blue-500 font-bold bg-blue-50 outline-2 outline-slate-200 p-2 w-fit rounded-md h-fit">
+                  d</p>
+                <p class="text-xs p-2 text-slate-500 col-span-2">Detail</p>
+              </div>
+
+              <div class="grid grid-cols-3">
+                <p class="text-xs text-blue-500 font-bold bg-blue-50 outline-2 outline-slate-200 p-2 w-fit rounded-md h-fit">
+                  u</p>
+                <p class="text-xs p-2 text-slate-500 col-span-2">Undo</p>
+              </div>
+
+              <div class="grid grid-cols-3">
+                <p class="text-xs text-blue-500 font-bold bg-blue-50 outline-2 outline-slate-200 p-2 w-fit rounded-md h-fit">
+                  r</p>
+                <p class="text-xs p-2 text-slate-500 col-span-2">Redo</p>
+              </div>
+              <div class="grid grid-cols-3">
+                <p class="text-xs text-blue-500 font-bold bg-blue-50 outline-2 outline-slate-200 p-2 w-fit rounded-md h-fit">
+                  s </p>
+                <p class="text-xs p-2 text-slate-500 col-span-2">Toggle Select</p>
+              </div>
+              <div class="grid grid-cols-3">
+                <p class="text-xs text-blue-500 font-bold bg-blue-50 outline-2 outline-slate-200 p-2 w-fit rounded-md h-fit">
+                  Del </p>
+                <p class="text-xs p-2 text-slate-500 col-span-2">Delete Selected</p>
+              </div>
+
+              <div class="grid grid-cols-3">
+                <p class="text-xs text-blue-500 font-bold bg-blue-50 outline-2 outline-slate-200 p-2 w-fit rounded-md h-fit">
+                  1 </p>
+                <p class="text-xs p-2 text-slate-500 col-span-2">Show First Pass Result</p>
+              </div>
+
+              <div class="grid grid-cols-3">
+                <p class="text-xs text-blue-500 font-bold bg-blue-50 outline-2 outline-slate-200 p-2 w-fit rounded-md h-fit">
+                  2 </p>
+                <p class="text-xs p-2 text-slate-500 col-span-2">Show B&D Result</p>
+              </div>
+
+            </div>
+          </div>
+
+        </div> <!--End of left panel-->
+
+        <!--canvas column-->
+        <div id="canvas_container" class="w-[512px] grid place-items-center h-fit">
+          <div style="width:512px; height:55px" class="grid grid-cols-4 place-items-center mb-2">
+            <div class="col-span-3 w-full">
+              <input type="text" id="promptInput" class="w-full px-2 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 text-lg" placeholder="Write text prompt here..." autocomplete="off" />
+            </div>
+
+            <div class="w-full grid place-items-center">
+              <button id="generateBtn" class="flex px-4 py-2 bg-violet-500 text-white font-semibold rounded-lg hover:bg-violet-700 focus:outline-none focus:ring-2 focus:ring-violet-500 focus:ring-opacity-75 transition ease-in-out duration-50">Generate!
+              </button>
+              <div id="loader" class="loader"></div>
+              <p style="color: red" id="warning"></p>
+            </div>
+          </div>
+
+          <div id="outer-container" class="relative outline outline-slate-200 outline-2 rounded-sm">
+            <div id="canvas-container" class="relative w-[512px] h-[512px] ">
+              <canvas id="imageCanvas" width="512px" height="512px" class="absolute top-0 left-0 z-40"></canvas>
+              <canvas id="drawingCanvas" width="512px" height="512px" class="absolute top-0 left-0 z-50"></canvas>
+              <canvas id="hiddenCanvas" width="512px" height="512px" class="absolute top-0 left-0 z-30"></canvas>
+              <canvas id="hiddenCanvas2" width="512px" height="512px" class="absolute top-0 left-0 z-10"></canvas>
+              <canvas id="hiddenCanvas3" width="512px" height="512px" class="absolute top-0 left-0 z-20"></canvas>
+
+            </div>
+          </div>
+
+          <div id="canvas-ctrl-left-panel" class="flex mt-2">
+            <button id="toggleSelectionBtn" class="md:mr-2 bg-violet-50 text-violet-500 rounded-lg hover:bg-violet-500 hover:text-white focus:outline-none focus:ring-2 focus:ring-violet-500 focus:ring-opacity-75 transition ease-in-out duration-50 border border-1 flex w-max h-max p-2 place-items-center space-x-2 text-xs">
+              Select
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" class="h-6 w-6 ml-1">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M5.25 7.5A2.25 2.25 0 0 1 7.5 5.25h9a2.25 2.25 0 0 1 2.25 2.25v9a2.25 2.25 0 0 1-2.25 2.25h-9a2.25 2.25 0 0 1-2.25-2.25v-9Z" />
+              </svg>
+            </button>
+
+            <button id="undoStrokeBtn" class="bg-violet-50 text-violet-500 rounded-lg hover:bg-violet-500 hover:text-white focus:outline-none focus:ring-2 focus:ring-violet-500 focus:ring-opacity-75 transition ease-in-out duration-50 border border-1 flex w-max h-max p-2 place-items-center space-x-2 text-xs">
+              Undo
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" class="h-6 w-6 ml-1">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M9 15 3 9m0 0 6-6M3 9h12a6 6 0 0 1 0 12h-3" />
+              </svg>
+            </button>
+
+            <button id="redoStrokeBtn" class="md:ml-2 bg-violet-50 text-violet-500 rounded-lg hover:bg-violet-500 hover:text-white focus:outline-none focus:ring-2 focus:ring-violet-500 focus:ring-opacity-75 transition ease-in-out duration-50 border border-1 flex w-max h-max p-2 place-items-center space-x-2 text-xs">
+              Redo
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" class="h-6 w-6 ml-1">
+                <path stroke-linecap="round" stroke-linejoin="round" d="m15 15 6-6m0 0-6-6m6 6H9a6 6 0 0 0 0 12h3" />
+              </svg>
+            </button>
+
+            <button id="deleteSelectedBtn" class="md:ml-2 bg-red-300 text-white rounded-lg hover:bg-red-500 hover:text-white focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-opacity-75 transition ease-in-out duration-50 border border-1 flex w-max h-max p-2 place-items-center space-x-2 text-xs">
+              Delete
+
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" class="h-6 w-6 ml-1">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18 18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+
+
+
+
+          <button id="toggleRefBtn" class="hidden md:ml-2 bg-violet-50 text-violet-500 rounded-lg hover:bg-violet-500 hover:text-white focus:outline-none focus:ring-2 focus:ring-violet-500 focus:ring-opacity-75 transition ease-in-out duration-50 border border-1 flex w-max h-max p-2 place-items-center space-x-2 text-xs mt-2">
+            Remove Image </button>
+
+        </div> <!--canvas column-->
+
+        <!-- outputs column-->
+        <div class="w-[512px]">
+          <div style="height: 55px" class="mb-2">
+            <h1 class="text-sm text-gray-500">Generated images will be populated below. <br />
+              Click an image to display it underneath your sketch </h1>
+          </div>
+          <div class="grid place-items-center">
+            <div id="reshape_image2clusterList" class="results-container">
+              <div class="result-image-wrapper">
+                <img id="res_0_img" src="./static/dummy/placeholder_wtext.png" alt="Image 1" onclick="openModal(this)" class="border border-2 border-slate-100">
+              </div>
+              <div class="result-image-wrapper">
+                <img id="res_1_img" src="./static/dummy/placeholder_wtext.png" alt="Image 2" onclick="openModal(this)" class="border border-2 border-slate-100">
+              </div>
+              <div class="result-image-wrapper">
+                <img id="res_2_img" src="./static/dummy/placeholder_wtext.png" alt="Image 3" onclick="openModal(this)" class="border border-2 border-slate-100">
+              </div>
+              <div class="result-image-wrapper">
+                <img id="res_3_img" src="./static/dummy/placeholder_wtext.png" alt="Image 4" onclick="openModal(this)" class="border border-2 border-slate-100">
+              </div>
+
+              <!-- Modal for displaying the large image -->
+              <div id="modal" class="border border-2 border-white">
+                <button id="close-button" onclick="closeModal()">X</button>
+                <img id="modal-image" alt="Large View" src="./static/dummy/placeholder.png" />
               </div>
             </div>
-          </div>
 
-          <div class="col-span-4 border-2 rounded-md">
-
-            <div class="slidecontainer" style="display:none">
-              Level of Detail: <output id="lod_val">1</output>
-              <input
-                type="range"
-                min="1"
-                max="3"
-                value="1"
-                class="slider"
-                id="lod"
-              />
-            </div>
-            <div class="border border-2 round-md" style="height:50px;width:50px;display:inline-block">
-              <button 
-                id="overlayDilationBtn"
-                title="Overlay Dilation">
-                <font size="6">❏</font>
-              </button>
-            </div>
-            <div class="slidecontainer border border-2 round-md" style="height:70px;width:200px;display:inline-block">
-              Number of Samples: <output id="num_images_val">6</output>
-              <input
-                type="range"
-                min="2"
-                max="8"
-                value="6"
-                class="slider"
-                step="2"
-                id="num_images"
-              />
-            </div>
-            <div class="slidecontainer border border-2 round-md" style="height:70px;width:250px;display:inline-block">
-              Blocking Dilation Strength:
-              <output id="dilation_val">65</output>
-              <input
-                type="range"
-                min="3"
-                max="133"
-                step="2"
-                value="65"
-                class="slider"
-                id="dilation"
-              />
-            </div>
-            <div>
-              <img
-                id="output_image"
-                width="420"
-                height="420"
-                src="./static/dummy/empty.png"
-              />
-            </div>
-            <div>
-                <ul id="reshape_image2clusterList">
-                    <!-- Images will be added here by JavaScript -->
-                </ul>
-                <ul id="imageclusterList">
-                  <!-- Images will be added here by JavaScript -->
-                </ul> 
-                <ul id="reshape_imageclusterList">
-                    <!-- Images will be added here by JavaScript -->
-                </ul>
-            </div>
           </div>
+          <p id="modal-caption" class="text-slate-500 text-sm mt-2"> Block and detail </p>
         </div>
-      </div>
-
-        <div class="border-2 p-2 rounded-md">
-          <input
-            type="checkbox"
-            id="autosaveBtn"
-            name="autosaveBtn"
-            checked
-          />
-          AutoSave on Generate
-        </div>
-
-        <div class="border-2 p-2 rounded-md"  style="display:none">
-          <input
-            type="checkbox"
-            id="lcmBtn"
-            name="lcmBtn"
-            style="display:none"
-            checked
-          />
-          Use LCM Scheduler
-        </div>
-
-        <div class="border-2 p-2 rounded-md">
-          <input
-            type="checkbox"
-            id="colorconBtn"
-            name="colorconBtn"
-          />
-          Use Color Consistency
-        </div>
-
-        <fieldset>
-          <div>
-            <input type="radio" id="our" name="model" value="our" checked />
-            <label for="low">Our ControlNet (v1.5)</label>
-          </div>
-
-          <div>
-            <input type="radio" id="orig" name="model" value="orig" />
-            <label for="high">Original ControlNet (v1.5 Scribble)</label>
-          </div>
-
-          <div class="slidecontainer">
-            Reshaping Strength:
-            <output id="strength_val">0.8</output>
-            <input
-              type="range"
-              min="0.0"
-              max="1.0"
-              step="0.1"
-              value="0.8"
-              class="slider"
-              id="strength"
-            />
-          </div>
-
-          <button class="border-2 p-1 rounded-md" id="debugFidBtn" style="display:none">
-            Show Stroke Fidelity Colors
-          </button>
-
-          <button class="border-2 p-2 rounded-md" id="overlayHEDBtn" style="display:none">
-            Overlay HED
-          </button>
-          <button class="border-2 p-2 rounded-md" id="overlayImageBtn" style="display:none">
-            Overlay Image
-          </button>
-        </fieldset>
-
-        <div class="grid grid-cols-5" style="display:none">
-          <p id="drawingStatus"><!-- Status updated by JavaScript --></p>
-          <p id="numStrokes"><!-- Stroke count updated by JavaScript --></p>
-        </div>
-
-        <div class="p-2 border-2 rounded-md grid place-items-center">
-          <div class="slidecontainer">
-            Num Inference Steps: <output id="numsteps_val">8</output>
-            <input
-              type="range"
-              min="1"
-              max="50"
-              value="8"
-              class="slider"
-              id="numsteps"
-            />
-          </div>
-          <div class="slidecontainer">
-            Guidance Scale: <output id="guidancescale_val">7</output>
-            <input
-              type="range"
-              min="0"
-              max="10"
-              value="7"
-              class="slider"
-              id="guidancescale"
-            />
-          </div>
-          <div class="slidecontainer">
-            ControNet Conditioning Scale:
-            <output id="controlnetscale_val">1.0</output>
-            <input
-              type="range"
-              min="0.0"
-              max="1.0"
-              step="0.1"
-              value="1.0"
-              class="slider"
-              id="controlnetscale"
-            />
-          </div>
-          <div class="slidecontainer">
-            Detail Dilation Strength:
-            <output id="contour_dilation_val">11</output>
-            <input
-              type="range"
-              min="3"
-              max="133"
-              step="2"
-              value="11"
-              class="slider"
-              id="contour_dilation"
-            />
-          </div>
-          <button 
-          id="overlayContourDilationBtn"
-          class="border-2 p-2 rounded-md border-gray-200">
-          Overlay Contour Dilation
-      </button>
-        </div>
-      </div>
-
-      <div class="col-span-1 col-span-1 m-6 space-y-3" style="display:none">
-        <div class="border-2 p-2 rounded-md border-gray-200 w-full" style="display:none">
-          <input type="checkbox" id="autogen" name="autogen" />
-          <font size="-2">Enable Auto-Gen</font>
-        </div>
-        <font size="-2">Time to next auto-generation:</font>
-        <p id="countdown"><font size="-2">30</font></p>
-        <div id="loader" class="loader"></div>
-        <p style="color: red" id="warning"></p>
-
-        <div class="border-2 p-2 rounded-md" style="display:none">
-          <input
-            type="checkbox"
-            id="toggleSelectionCompletionBoxBtn"
-            name="toggleSelectionCompletionBoxBtn"
-          />
-          Blocking
-        </div>
-
-        <button
-          class="border-2 p-2 rounded-md border-gray-200 w-full"
-          id="selectRefStrokeBtn"
-          style="display:none"
-        >
-          <font size="-2">Select Ref Stroke</font>
-        </button>
-
-        <button
-          class="border-2 p-2 rounded-md border-gray-200 w-full"
-          id="undoStrokeBtn"
-          style="display:none"
-        >
-          <font size="-2">↩ Undo Stroke</font>
-        </button>
       </div>
     </div>
-    <div class="col-span-1 col-span-1 m-6 space-y-3">
-      <script type="module" src="/static/js/main.js"></script>
+
+    <!-- Full-Screen Loader Overlay -->
+    <div id="loader-overlay" class="loader-overlay hidden">
+      <div class="loader"></div>
     </div>
-  </body>
+
+    <script>
+      // UI Javscript -- not related to algorithm, so putting them here for simplicity
+
+      const modal = document.getElementById('modal');
+      const modalImage = document.getElementById('modal-image');
+
+      // Function to open the modal and display the clicked image
+      function openModal(imgElement) {
+
+        const img_src = imgElement.src;
+        modalImage.src = img_src; // Set the source of the large image
+        modal.classList.add('show'); // Show the modal with transition
+        if (img_src.includes("gen")) {
+          modal.classList.add("border-red-500")
+        }
+        if (img_src.includes("reshape2")) {
+          if (modal.classList.contains("border-red-500")) {
+            modal.classList.remove("border-red-500")
+          }
+        }
+      }
+
+      // Function to close the modal
+      function closeModal() {
+        modal.classList.remove('show'); // Hide the modal with transition
+      }
+    </script>
+</body>
+<script type="module" src="/static/js/main.js"></script>
+
 </html>

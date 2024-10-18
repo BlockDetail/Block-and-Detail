@@ -5,252 +5,78 @@
 import {
   handleTextGenerate,
   getGenImages,
-  reCluster,
   handleSaveLayer,
   clearAllLayers,
-  transformImageToStrokes,
-  saveOverlay
 } from "./apiService.js";
 import {
   setupReferenceCanvas,
   toggleSelectionMode,
-  toggleReference,
   undoStroke,
   redoStroke,
-  toggleTranslateMode,
-  toggleDrawCanvas,
   deleteSelectedStrokes,
   markConstruction,
+  clearStrokes,
+  markDetail,
+  showReferenceCanvas,
+  toggleReference
 } from "./canvasManager.js";
 export function setupUI() {
   hideLoader();
   setupButtons();
-  setupSliders();
   initializeUI();
 }
 
-export async function setCluster(cluster) {
-  await fetch("/set-cluster", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ cluster: cluster }), //JSON.stringify({ layers: layers }),
-  })
-    .then((response) => response.json())
-    .catch((error) => {
-      console.error("Error:", error);
-    });
+var currentMode = "reshape" // for results display
+var reshapeImageList = []
+var originalImageList = []
+
+export function updateImageResultList(resultType, images) {
+  if (resultType == "reshape_image2") {
+    reshapeImageList = images;
+    console.log("reshapeImageList:", reshapeImageList);
+  } else if (resultType == "image") {
+    originalImageList = images;
+    console.log("originalImageList:", originalImageList);
+  }
 }
 
-export function updateGenImageList(listname, imageUrl, hide) {
-  const list = document.getElementById(listname);
-  const listItem = document.createElement("li");
-  const image = new Image();
-  image.height = 40;
-  image.width = 40;
-  image.src = imageUrl;
-  if (hide === true) {
-    console.log("hidden", imageUrl);
-    image.style.filter = "brightness(0.3)";
+export function updateGenImageList(imageUrl, curSampleIdx) {
+  const imageHtmlID = "res_" + curSampleIdx.toString() + "_img";
+  // Append a unique query parameter (e.g., current timestamp) to force reload
+  const updatedUrl = `${imageUrl}?t=${new Date().getTime()}`;
+  const old_image = document.getElementById(imageHtmlID);
+  const new_image = old_image.cloneNode(true);
+  old_image.parentNode.replaceChild(new_image, old_image);
+  new_image.src = updatedUrl;
+  if (updatedUrl.includes("gen")) { // gen
+    new_image.classList.add("border-red-500")
   }
-  listItem.appendChild(image);
-  list.insertBefore(listItem, list.children[0]);
-  image.addEventListener("mouseover", function () {
-    fetch("/update-selected-ref-img", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ path: imageUrl }),
-    }) // not waiting for response
-    let im = document.getElementById('output_image');
-    im.src = imageUrl;
-    if (im.src.includes("reshape")){
-      im.style.border = "solid 5px #FF0000";
-    } else {
-      im.style.border = "solid 5px #000000";
+  if (updatedUrl.includes("reshape2")) { // reshape2
+    if (new_image
+      .classList.contains("border-red-500")) {
+      new_image.classList.remove("border-red-500")
     }
-
-    // add border to selected image
-    // first remove border from all images from all lists
-    let i = 0;
-    let modes = ["reshape_image2", "image"];
-    while (i < modes.length) {
-      var listr = document.getElementById("genImageList" + i.toString());
-      var children = listr.childNodes;
-      children.forEach(function (item) {
-        // console.log("removing", modes[i]+"clusterList", item)
-        if (item.localName == "li") {
-          item.firstChild.style.border = "none";
-        }
-      });
-      i++;
-    }
-    // then add border to selected image
-    if (image.src.includes("reshape")){
-      image.style.border = "solid 2px #FF0000";
-    } else {
-      image.style.border = "solid 2px #000000";
-    }
-
-  });
-  image.addEventListener("click", function () {
+  }
+  new_image.addEventListener('click', function () {
+    const imgSrc = this.src;
     fetch("/update-selected-ref-img-selected", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ path: imageUrl }),
+      body: JSON.stringify({ path: imgSrc }),
     }
-    ) // not waiting for response
-
-    setupReferenceCanvas(imageUrl);
-    let im = document.getElementById('output_image');
-    im.src = imageUrl;
-    if (im.src.includes("reshape")){
-      im.style.border = "solid 5px #FF0000";
-    } else {
-      im.style.border = "solid 5px #000000";
-    }
-
-    // add border to selected image
-    // first remove border from all images from all lists
-    let i = 0;
-    let modes = ["reshape_image2", "image"];
-    while (i < modes.length) {
-      var listr = document.getElementById("genImageList" + i.toString());
-      var children = listr.childNodes;
-      console.log(modes[i] + "clusterList", listr)
-      children.forEach(function (item) {
-        if (item.localName == "li") {
-          item.firstChild.style.border = "none";
-        }
-      });
-      i++;
-    }
-    // then add border to selected image
-    if (image.src.includes("reshape")){
-      image.style.border = "solid 2px #FF0000";
-    } else {
-      image.style.border = "solid 2px #000000";
-    }
-
+    )
+    showReferenceCanvas()
+    setupReferenceCanvas(imgSrc);
+    console.log("Updated reference image:", imgSrc);
   });
-}
 
-export function updateKeyImageList(imageUrl) {
-  fetch("/add-key", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ path: imageUrl }),
-  })
-    .then((response) => response.json())
-    .catch((error) => {
-      console.error("Error:", error);
-    });
-  const list = document.getElementById("keyImageList");
-  const listItem = document.createElement("li");
-  const image = new Image();
-  image.src = imageUrl;
-  listItem.appendChild(image);
-  console.log("keyimagelist:", list);
-  list.insertBefore(listItem, list.children[0]);
-  image.addEventListener("click", function () {
-    removeKeyImageList(imageUrl);
-  });
-}
-
-export function updateImageList(imageUrl) {
-  const list = document.getElementById("imageList");
-  const listItem = document.createElement("li");
-  const image = new Image();
-  var x = document.createElement("INPUT");
-  x.setAttribute("type", "text");
-  x.setAttribute(
-    "id",
-    imageUrl.split("?")[0].split("/")[
-    imageUrl.split("?")[0].split("/").length - 1
-    ]
-  );
-  x.setAttribute("style", "width: 256px");
-  console.log(
-    "url input",
-    imageUrl.split("?")[0].split("/")[
-    imageUrl.split("?")[0].split("/").length - 1
-    ]
-  );
-  x.className =
-    "placeholder:italic placeholder:text-slate-400 block bg-white border border-slate-300 rounded-md py-2 pl-1 pr-1 shadow-sm focus:outline-none focus:border-sky-500 focus:ring-sky-500 focus:ring-1 sm:text-sm";
-  image.src = imageUrl;
-  listItem.appendChild(image);
-  listItem.appendChild(x);
-  list.insertBefore(listItem, list.children[0]);
-  image.addEventListener("click", function () {
-    updateKeyImageList(imageUrl);
-  });
-}
-
-export async function removeKeyImageList(imageUrl) {
-  await fetch("/remove-key", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ path: imageUrl }),
-  })
-    .then((response) => response.json())
-    .catch((error) => {
-      console.error("Error:", error);
-    });
-  const keylist = document.getElementById("keyImageList");
-  console.log("target:", imageUrl);
-  var children = keylist.childNodes;
-  children.forEach(function (item) {
-    if (item.localName == "li") {
-      console.log("imageurl:", item.firstChild.src);
-      if (item.firstChild.src.includes(imageUrl)) {
-        console.log("removed imageurl:", item.firstChild.src);
-        keylist.remove(item);
-      }
-    }
-  });
-}
-
-export async function removeGenImageList(imageUrl) {
-  await fetch("/remove-cluster", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ path: imageUrl }),
-  })
-    .then((response) => response.json())
-    .catch((error) => {
-      console.error("Error:", error);
-    });
-}
-
-export function clearImageList() {
-  const list = document.getElementById("imageList");
-  if (list !== null) {
-    while (list.firstChild) {
-      list.removeChild(list.lastChild);
-    }
-    const keylist = document.getElementById("keyImageList");
-    if (keylist !== null) {
-      while (keylist.firstChild) {
-        keylist.removeChild(keylist.lastChild);
-      }
-    }
-  }
 }
 
 export function clearGenImageList() {
   let i = 0;
-  let modes = ["reshape_image2", "image"];
+  let modes = ["reshape_image2"]//, "image"];
   while (i < modes.length) {
     const list0 = document.getElementById(modes[i] + "clusterList");
     while (list0.firstChild) {
@@ -271,9 +97,6 @@ function hideLoader() {
 
 function setupButtons() {
   document
-    .getElementById("saveOverlayBtn")
-    .addEventListener("click", saveOverlay);
-  document
     .getElementById("undoStrokeBtn")
     .addEventListener("click", undoStroke);
   document
@@ -283,63 +106,62 @@ function setupButtons() {
     .getElementById("generateBtn")
     .addEventListener("click", uiHandleGenerate);
   document
-    .getElementById("toggleRefBtn")
-    .addEventListener("click", toggleReference);
-  document
-    .getElementById("overlayHEDBtn")
-    .addEventListener("click", function () { toggleRefType("hed"); });
-  document
-    .getElementById("overlayImageBtn")
-    .addEventListener("click", function () { toggleRefType("image"); });
-  document
-    .getElementById("overlayDilationBtn")
-    .addEventListener("click", function () { setupReferenceCanvas("./static/sketch/dilation.png"); });
-  document
-    .getElementById("overlayContourDilationBtn")
-    .addEventListener("click", function () { setupReferenceCanvas("./static/sketch/contour_dilation.png"); });
-  document
-    .getElementById("lcmBtn")
-    .addEventListener("change", function () {
-      if (document.getElementById("lcmBtn").checked) {
-        document.getElementById("numsteps").value = 8;
-        document.getElementById("controlnetscale").value = 1.0;
-        document.getElementById("numsteps_val").innerText = 8;
-        document.getElementById("controlnetscale_val").innerText = 1.0;
-      } else {
-        document.getElementById("numsteps").value = 40;
-        document.getElementById("controlnetscale").value = 1.0;
-        document.getElementById("numsteps_val").innerText = 40;
-        document.getElementById("controlnetscale_val").innerText = 1.0;
-      }
-    });
+    .getElementById("toggleRefBtn").addEventListener('click', toggleReference);
 
-  document.getElementById("toggleSelectionBtn").addEventListener("click", function () { toggleSelectionMode(true); });
-  document.getElementById("exitSelectionBtn").addEventListener("click", function () { toggleSelectionMode(false); });
-  document.getElementById("toggleTranslateBtn").addEventListener("click", toggleTranslateMode);
+  document.getElementById("toggleSelectionBtn").addEventListener("click", toggleSelectionMode);
+  document.getElementById("advanced-setting-btn").addEventListener("click", function () {
+    document.getElementById("advanced-setting-wrapper").classList.toggle("hidden");
+  });
 
-
-  document.getElementById("toggleSketchBtn").addEventListener("click", toggleDrawCanvas);
-  document.getElementById("selectRefStrokeBtn").addEventListener("click", uiHandleSelectRefStroke);
+  document.getElementById("new-sketch-btn").addEventListener("click", function () {
+    clearStrokes();
+  })
 }
 
-function toggleRefType(type) {
-  let im = document.getElementById('output_image');
-  console.log("imsrc", im.src)
-  if (im.src.includes("examples")) {
-    if (type == "image") {
-      console.log("wrong place");
-      setupReferenceCanvas(im.src.replace("betterhed_", "gen_").replace("hed_", "gen_"));
-    } else if (type == "hed") {
-      console.log("imsrcreplace");
-      console.log("imsrcreplace", im.src.replace("gen_", "hed_").replace("betterhed_", "hed_"));
-      setupReferenceCanvas(im.src.replace("gen_", "hed_").replace("betterhed_", "hed_"));
+function toggleImageModes(mode) {
+  var imageList = []
+  currentMode = mode
+  console.log("currentMode:", currentMode)
+  const modalCaption = document.getElementById('modal-caption');
+  if (mode == "original") {
+    imageList = originalImageList
+    modalCaption.innerHTML = "First pass tight control"
+    modalCaption.classList.add("text-red-500")
+  }
+  else if (mode == "reshape") {
+    imageList = reshapeImageList
+    modalCaption.innerHTML = "Block and detail"
+    if (modalCaption.classList.contains("text-red-500")) {
+      modalCaption.classList.remove("text-red-500")
     }
+  }
+  console.log("imageList:", imageList)
+  const listLen = imageList.length
+  for (var i = 0; i < listLen; i++) {
+    updateGenImageList(imageList[i], i)
+  }
+
+  const modal_image = document.getElementById("modal-image");
+  const path = modal_image.src;
+  // modal image src is always ..._{sample_idx}.png, the last underscore is the split point
+  const match = path.match(/(gen|reshape2)_(\d+)\.png/);  // Match until `.png`, ignore anything after
+  if (match == null) {
+    return;
+  }
+  if (match && match[2]) {
+    const number = parseInt(match[2], 10);
+    console.log("model_idx:", number)
+    const new_src = imageList[number];
+    modal_image.src = new_src;
+    console.log("Updated modal image src:", new_src)
+    setupReferenceCanvas(new_src);
   }
 }
 
 async function uiHandleGenerate() {
   await handleSaveLayer().then(() => {
-    // get fidelity
+    const modal = document.getElementById('modal');
+    modal.classList.remove('show');
     var radios = document.getElementsByName('model');
     var selectedModel;
     for (var radio of radios) {
@@ -351,91 +173,52 @@ async function uiHandleGenerate() {
     handleTextGenerate(selectedModel);
   });
 }
-function uiHandleSelectRefStroke() {
-  transformImageToStrokes();
-}
 
-function setupSliders() {
-  const sliders = {
-    numsteps: "numsteps_val",
-    guidancescale: "guidancescale_val",
-    controlnetscale: "controlnetscale_val",
-    lod: "lod_val",
-    num_images: "num_images_val",
-    strength: "strength_val",
-    dilation: "dilation_val",
-    contour_dilation: "contour_dilation_val"
-  };
-
-  for (const [sliderId, displayId] of Object.entries(sliders)) {
-    const slider = document.getElementById(sliderId);
-    if (sliderId == 'num_images') {
-      fetch("/gpu-count")
-        .then((response) => response.json())
-        .then((data) => {
-          const num_gpus = data["num_gpus"];
-          console.log(num_gpus);
-          document.getElementById(sliderId).min = num_gpus;
-          document.getElementById(sliderId).max = num_gpus * 5;
-          document.getElementById(sliderId).step = num_gpus;
-          document.getElementById(sliderId).value = num_gpus * 3;
-          document.getElementById(displayId).innerText = num_gpus * 3;
-        })
-        .catch((error) => {
-          console.error("Error:", error);
-        });
-    }
-    slider.addEventListener("change", () => {
-      document.getElementById(displayId).innerText = slider.value;
-      if (sliderId === "numcluster") reCluster();
-      if (sliderId === "lod") getGenImages("hed");
-    });
-  }
-}
-
-function setupClusterButtons() {
-  const clusterTypes = ["hed"];
-  clusterTypes.forEach((type) => {
-    document
-      .getElementById(`${type.toUpperCase()}CBtn`)
-      .addEventListener("click", () => setCluster(type));
-  });
-}
-
-export function showGenImages(type) {
-  clearGenImageList();
-  getGenImages(type);
+export function showGenImages() {
+  getGenImages();
 }
 
 function setupKeydownListener() {
   document.addEventListener('keydown', function (event) {
+    const activeElement = document.activeElement;
+    const isTextInput = activeElement.tagName === 'INPUT' || activeElement.tagName === 'TEXTAREA';
+
+    // If typing in an input or textarea, don't handle the keydown
+    if (isTextInput) {
+      return;
+    }
+
     const key = event.key; // const {key} = event; ES6+
     if (key === "Backspace" || key === "Delete") {
       console.log("Deleting!")
       deleteSelectedStrokes();
     }
-    if (!event.ctrlKey && key === "c") {
-      markConstruction();
-    }
-    if (event.key === 't') {
-      console.log("starting translation!")
-      toggleTranslateMode();
-    }
-    if (event.ctrlKey && event.key === 'z') {
-      console.log("Undo Stroke!")
+    if (key == "u") {
       undoStroke();
     }
-    if (event.ctrlKey && event.key === 'y') {
-      console.log("Redo Stroke!")
+    if (key == "r") {
       redoStroke();
     }
-  });
+    if (!event.ctrlKey && key === "b") {
+      markConstruction();
+    }
+    if (!event.ctrlKey && key === "d") {
+      markDetail();
+    }
+    // cmd + 1 is for toggle image mode
+    if (key === "1") {
+      toggleImageModes("original");
+    };
+    if (key === "2") {
+      toggleImageModes("reshape");
+    }
+    if (key == "s") {
+      toggleSelectionMode();
+    }
+  })
 }
 
 function initializeUI() {
   clearAllLayers();
-  document.getElementById("drawingStatus").innerText = "Ready to Draw";
-  document.getElementById("numStrokes").innerText =
-    "Number of Strokes on Canvas: 0";
   setupKeydownListener();
 }
