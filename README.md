@@ -6,7 +6,6 @@
 
 <a href="https://miatang13.github.io/BlockAndDetail/"><img src="https://img.shields.io/static/v1?label=Project&message=Website&color=red" height=20.5></a>
 <a href="https://arxiv.org/abs/2402.18116"><img src="https://img.shields.io/badge/arXiv-BlockAndDetail-b31b1b.svg" height=20.5></a>
-<a href="http://34.82.197.67:5000/"><img src="https://img.shields.io/static/v1?label=Custom Interface&message=Demo&color=blue" height=20.5></a>
 
 ![Teaser Image](docs/teaser.png)
 
